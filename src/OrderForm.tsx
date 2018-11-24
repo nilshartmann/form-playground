@@ -54,6 +54,9 @@ export default function OrderForm() {
       <Input label="Vorname" {...vornameInput} />
       <Input label="Nachname" {...nachnameInput} />
       <Input label="PLZ" {...plzInput} />
+      <button onClick={() => overallFormState.setValue("plz", "")}>
+        Clear PLZ
+      </button>
       <button disabled={overallFormState.hasErrors} onClick={submit}>
         Bestellen !
       </button>

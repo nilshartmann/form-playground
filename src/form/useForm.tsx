@@ -123,7 +123,13 @@ export function useForm<FIELDS>(
     // "overall" form state
     {
       hasErrors: Object.keys(currentState.errors).length > 0,
-      values: currentState.values
+      values: currentState.values,
+      setValue: (fieldname: keyof FIELDS, value: string) =>
+        dispatch({
+          type: "valueChange",
+          field: fieldname as string,
+          newValue: value
+        })
     },
     [
       // individual fields
@@ -139,10 +145,14 @@ export function useForm<FIELDS>(
         };
       })
     ]
-  ] as [OverallState, FormFieldInput[]];
+  ] as [OverallState<FIELDS>, FormFieldInput[]];
 }
 
-type OverallState = { hasErrors: boolean; values: { [P: string]: string } };
+type OverallState<FIELDS> = {
+  hasErrors: boolean;
+  values: { [P: string]: string };
+  setValue: (field: keyof FIELDS, value: string) => void;
+};
 type FormFieldInput = {
   value: any;
   errorMessages: any;
