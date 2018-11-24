@@ -5,14 +5,14 @@ import { Input } from "./form/Input";
 // Form Logic
 import { ValidateFn, useForm } from "./form/useForm";
 
-interface PizzaFormState {
+interface OrderFormState {
   vorname: string;
   nachname: string;
   plz: string;
 }
 
 // validatePizzaForm jetzt "kontextlos", dh zum Beispiel von außen testbar
-const validatePizzaForm: ValidateFn<PizzaFormState> = function(
+const validatePizzaForm: ValidateFn<OrderFormState> = function(
   newFormInput,
   isVisited,
   recordError
@@ -36,9 +36,9 @@ const validatePizzaForm: ValidateFn<PizzaFormState> = function(
   }
 };
 
-export default function PizzaForm() {
+export default function OrderForm() {
   const [overallFormState, [vornameInput, nachnameInput, plzInput]] = useForm<
-    PizzaFormState
+    OrderFormState
   >(validatePizzaForm, {
     vorname: "",
     nachname: "",

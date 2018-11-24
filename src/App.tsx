@@ -1,5 +1,5 @@
 import React, { Component } from "react";
-import PizzaForm from "./PizzaForm";
+import OrderForm from "./OrderForm";
 
 class App extends Component {
   render() {
@@ -12,7 +12,7 @@ class App extends Component {
         <div className="PageContainer">
           <main>
             <h1>Pizza ist das Beste...</h1>
-            <PizzaForm />
+            <OrderForm />
           </main>
         </div>
       </>
