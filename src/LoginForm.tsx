@@ -30,7 +30,7 @@ export default function LoginForm() {
   >(validateLoginForm, {
     username: "",
     password: ""
-  });
+  }, () => {});
 
   function submit() {
     console.log("login with", overallFormState.values);
