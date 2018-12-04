@@ -18,7 +18,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function(
   recordError
 ) {
   if (newFormInput.vorname === "a") {
-    recordError("vorname", "NAY");
+    window.setTimeout(() => recordError("vorname", "NAY"),5000);
   }
 
   if (isVisited("vorname") && newFormInput.vorname.length < 3) {
@@ -37,17 +37,18 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function(
 };
 
 export default function OrderForm() {
+  function submit() {
+    console.log("submitting", overallFormState.values);
+  }
+
   const [overallFormState, [vornameInput, nachnameInput, plzInput]] = useForm<
     OrderFormState
   >(validatePizzaForm, {
     vorname: "",
     nachname: "",
     plz: ""
-  });
+  }, submit);
 
-  function submit() {
-    console.log("submitting", overallFormState.values);
-  }
 
   return (
     <div className="Form">
@@ -57,7 +58,7 @@ export default function OrderForm() {
       <button onClick={() => overallFormState.setValue("plz", "")}>
         Clear PLZ
       </button>
-      <button disabled={overallFormState.hasErrors} onClick={submit}>
+      <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit}>
         Bestellen !
       </button>
     </div>

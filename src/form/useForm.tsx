@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useReducer, useState } from "react";
 
 type Fields<FIELDS> = { [P in keyof FIELDS]: string };
 
@@ -32,116 +32,86 @@ export type ValidateFn<FIELDS> = (
 
 export function useForm<FIELDS>(
   validate: ValidateFn<FIELDS>,
-  fields: Fields<FIELDS>
+  fields: Fields<FIELDS>,
+  submit: () => void
 ) {
-  const formReducer: React.Reducer<FormState<FIELDS>, FormAction> = function(
-    oldState,
-    action
-  ) {
-    function errorRecorder(errors: FormErrors<FIELDS>) {
-      return function(field: keyof FIELDS, msg: string) {
-        if (!errors[field]) {
-          errors[field] = [msg];
-        } else {
-          errors[field]!.push(msg);
-        }
-      };
-    }
-
-    switch (action.type) {
-      case "valueChange": {
-        const newValues = Object.assign({}, oldState.values, {
-          [action.field]: action.newValue
-        });
-        const errors: FormErrors<FIELDS> = {};
-        validate(
-          newValues,
-          fieldName => oldState.fieldsVisited[fieldName] === true,
-          errorRecorder(errors)
-        );
-
-        return {
-          ...oldState,
-          errors,
-          values: newValues
-        };
+  function errorRecorder(errors: FormErrors<FIELDS>, setErrors:(e:{})=>void) {
+    return function(field: keyof FIELDS, msg: string) {
+      if (!errors[field]) {
+        errors[field] = [msg];
+      } else {
+        errors[field]!.push(msg);
       }
-
-      case "fieldVisit": {
-        const errors: FormErrors<FIELDS> = {};
-        const fieldsVisited = {
-          // https://stackoverflow.com/a/51193091/6134498
-          ...(oldState.fieldsVisited as object),
-          [action.field]: true
-        } as FieldsVisited<FIELDS>;
-        validate(
-          oldState.values,
-          (fieldName: keyof FIELDS) => fieldsVisited[fieldName] === true,
-          errorRecorder(errors)
-        );
-
-        return {
-          ...oldState,
-          fieldsVisited,
-          errors
-        };
-      }
-    }
-
-    return oldState;
-  };
-
-  const [currentState, dispatch] = useReducer<FormState<FIELDS>, FormAction>(
-    formReducer,
-    {
-      values: fields,
-      errors: {},
-      fieldsVisited: {}
-    }
-  );
-
-  function dispatchValueChange({
-    currentTarget
-  }: React.ChangeEvent<HTMLInputElement>) {
-    dispatch({
-      type: "valueChange",
-      field: currentTarget.name,
-      newValue: currentTarget.value
-    });
+      setErrors(errors);
+    };
   }
 
-  function dispatchFieldVisit({
-    currentTarget
-  }: React.FocusEvent<HTMLInputElement>) {
-    dispatch({
-      type: "fieldVisit",
-      field: currentTarget.name
-    });
+  const [values, setValues] = useState(fields);
+  const [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
+  const [errors, setErrors] = useState({} as FormErrors<FIELDS>);
+
+  const doValidation = (newValues: FormValues<FIELDS>, allFields?:boolean) => {
+    const newErrors:FormErrors<FIELDS>={};
+    validate(
+      newValues,
+      fieldName => (fieldsVisited[fieldName] === true) || (allFields === true),
+      errorRecorder(newErrors,(e) => setErrors(e))
+    );
+    return newErrors;
   }
+
+  const updateValues = (field: keyof FIELDS, newValue:any) => {
+    const newValues = Object.assign({}, values, {
+      [field]: newValue
+    });
+    doValidation(newValues);
+    setValues(newValues);
+  }
+  function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>):void {
+    const newFieldsVisited = {
+      // https://stackoverflow.com/a/51193091/6134498
+      ...(fieldsVisited as any),
+      [currentTarget.name]: true
+    } as FieldsVisited<FIELDS>;
+    doValidation(values);
+    setFieldsVisited(newFieldsVisited);
+  }
+  function onUpdateValues ({ currentTarget }: React.ChangeEvent<HTMLInputElement>):void  {
+    updateValues(currentTarget.name as keyof FIELDS, currentTarget.value);
+  }  
+
+  function handleSubmit() {
+    const newErrors=doValidation(values, true);
+    if(Object.keys(newErrors).length === 0) {
+      submit();
+    } else {
+      console.log('Errors found, submit aborted.');
+    }
+
+  }
+
+ 
 
   return [
     // "overall" form state
     {
-      hasErrors: Object.keys(currentState.errors).length > 0,
-      values: currentState.values,
-      setValue: (fieldname: keyof FIELDS, value: string) =>
-        dispatch({
-          type: "valueChange",
-          field: fieldname as string,
-          newValue: value
-        })
+      hasErrors: Object.keys(errors).length > 0,
+      values: values,
+      setValue: updateValues,
+        handleSubmit: handleSubmit
+
     },
     [
       // individual fields
       ...Array.from(Object.keys(fields)).map(fieldName => {
         return {
           // @ts-ignore
-          value: currentState.values[fieldName],
+          value: values[fieldName],
           // @ts-ignore
-          errorMessages: currentState.errors[fieldName],
+          errorMessages: errors[fieldName],
           name: fieldName,
-          onChange: dispatchValueChange,
-          onBlur: dispatchFieldVisit
+          onChange: onUpdateValues,
+          onBlur: updateVisitedFields
         };
       })
     ]
@@ -152,6 +122,7 @@ type OverallState<FIELDS> = {
   hasErrors: boolean;
   values: { [P: string]: string };
   setValue: (field: keyof FIELDS, value: string) => void;
+  handleSubmit: () => void;
 };
 type FormFieldInput = {
   value: any;
