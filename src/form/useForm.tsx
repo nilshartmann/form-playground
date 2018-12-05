@@ -1,6 +1,6 @@
 import { useReducer, useState } from "react";
 
-type Fields<FIELDS> = { [P in keyof FIELDS]: string };
+type Fields<FIELDS> = { [P in keyof FIELDS]: any };
 
 interface FormChangeAction {
   field: string;
@@ -35,6 +35,11 @@ export function useForm<FIELDS>(
   fields: Fields<FIELDS>,
   submit: () => void
 ) {
+  const [values, setValues] = useState(fields);
+  const [submitted, setSubmitted] = useState(false);
+  const [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
+  const [errors, setErrors] = useState({} as FormErrors<FIELDS>);
+
   function errorRecorder(errors: FormErrors<FIELDS>, setErrors:(e:{})=>void) {
     return function(field: keyof FIELDS, msg: string) {
       if (!errors[field]) {
@@ -42,21 +47,19 @@ export function useForm<FIELDS>(
       } else {
         errors[field]!.push(msg);
       }
-      setErrors(errors);
+      
     };
   }
 
-  const [values, setValues] = useState(fields);
-  const [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
-  const [errors, setErrors] = useState({} as FormErrors<FIELDS>);
-
-  const doValidation = (newValues: FormValues<FIELDS>, allFields?:boolean) => {
+  const doValidation = (newValues: FormValues<FIELDS>, allFields:boolean=submitted) => {
     const newErrors:FormErrors<FIELDS>={};
     validate(
       newValues,
       fieldName => (fieldsVisited[fieldName] === true) || (allFields === true),
       errorRecorder(newErrors,(e) => setErrors(e))
     );
+    console.log('newErrors ', newErrors);
+    setErrors(newErrors);
     return newErrors;
   }
 
@@ -67,6 +70,7 @@ export function useForm<FIELDS>(
     doValidation(newValues);
     setValues(newValues);
   }
+
   function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>):void {
     const newFieldsVisited = {
       // https://stackoverflow.com/a/51193091/6134498
@@ -74,13 +78,16 @@ export function useForm<FIELDS>(
       [currentTarget.name]: true
     } as FieldsVisited<FIELDS>;
     doValidation(values);
+    console.log('newieldsVisited ', newFieldsVisited);
     setFieldsVisited(newFieldsVisited);
   }
+
   function onUpdateValues ({ currentTarget }: React.ChangeEvent<HTMLInputElement>):void  {
     updateValues(currentTarget.name as keyof FIELDS, currentTarget.value);
   }  
 
   function handleSubmit() {
+    setSubmitted(true);
     const newErrors=doValidation(values, true);
     if(Object.keys(newErrors).length === 0) {
       submit();
@@ -111,7 +118,8 @@ export function useForm<FIELDS>(
           errorMessages: errors[fieldName],
           name: fieldName,
           onChange: onUpdateValues,
-          onBlur: updateVisitedFields
+          onBlur: updateVisitedFields,
+          foo: 'bar'
         };
       })
     ]
