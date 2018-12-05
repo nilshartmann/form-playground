@@ -18,6 +18,7 @@ type FormAction = FormChangeAction | FieldVisitAction;
 type FieldsVisited<FIELDS> = { [P in keyof FIELDS]?: boolean };
 type FormValues<FIELDS> = { [P in keyof FIELDS]: string };
 type FormErrors<FIELDS> = { [P in keyof FIELDS]?: string[] | null };
+export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
 type FormState<FIELDS> = {
   values: FormValues<FIELDS>;
   errors: { [P in keyof FIELDS]?: string[] | null };
@@ -33,7 +34,8 @@ export type ValidateFn<FIELDS> = (
 export function useForm<FIELDS>(
   validate: ValidateFn<FIELDS>,
   fields: Fields<FIELDS>,
-  submit: () => void
+  submit: () => void,
+  valueCreators: ValueCreators<FIELDS> = {}
 ) {
   const [values, setValues] = useState(fields);
   const [submitted, setSubmitted] = useState(false);
@@ -63,12 +65,13 @@ export function useForm<FIELDS>(
     return newErrors;
   }
 
-  const updateValues = (field: keyof FIELDS, newValue:any) => {
+  const setValue = (field: keyof FIELDS, newValue:any) => {
     const newValues = Object.assign({}, values, {
       [field]: newValue
     });
     doValidation(newValues);
     setValues(newValues);
+    console.log(`setting value for ${field} to `, newValue);
   }
 
   function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>):void {
@@ -82,8 +85,8 @@ export function useForm<FIELDS>(
     setFieldsVisited(newFieldsVisited);
   }
 
-  function onUpdateValues ({ currentTarget }: React.ChangeEvent<HTMLInputElement>):void  {
-    updateValues(currentTarget.name as keyof FIELDS, currentTarget.value);
+  function updateValues ({ currentTarget }: React.ChangeEvent<HTMLInputElement>):void  {
+    setValue(currentTarget.name as keyof FIELDS, currentTarget.value);
   }  
 
   function handleSubmit() {
@@ -97,6 +100,36 @@ export function useForm<FIELDS>(
 
   }
 
+  //
+  // ############################ Multi Field Operations
+  //
+
+  const onMultiFieldRemove = (field: keyof FIELDS, idx: number) => {
+    let newArray=(values[field] as []).filter((e,myIdx) => idx !== myIdx);
+    setValue(field, newArray);
+  }
+  //onMultiFieldChange: (pi: Pizza, idx: number) => void;
+  const onMultiAdd = (field: keyof FIELDS) => {
+    const initial:any[] = values[field] as any[];
+    const valueCreator: (() => object) | undefined = valueCreators[field];
+    if (valueCreator) {
+      const newArray=[...(initial)];
+      newArray.push(valueCreator());
+      setValue(field, newArray);
+    } else {
+      console.error(`No valueCreator for ${field} was supplied. 
+      Adding values is impossible. To change this supply 
+      an object with a valueCreator for ${field} to useForm`);
+    }
+  }
+  const onMultiValueUpdate = (field: keyof FIELDS, idx: number, newValue: any) => {
+    console.log('new value ', newValue);
+    const newArray=(values[field] as any[]);
+    newArray[idx] = newValue;
+    setValue(field, newArray);
+  }
+
+
  
 
   return [
@@ -104,22 +137,26 @@ export function useForm<FIELDS>(
     {
       hasErrors: Object.keys(errors).length > 0,
       values: values,
-      setValue: updateValues,
+      setValue: setValue,
         handleSubmit: handleSubmit
 
     },
     [
       // individual fields
       ...Array.from(Object.keys(fields)).map(fieldName => {
+        const fieldKey = fieldName as keyof FIELDS;
         return {
           // @ts-ignore
           value: values[fieldName],
           // @ts-ignore
           errorMessages: errors[fieldName],
           name: fieldName,
-          onChange: onUpdateValues,
+          onChange: updateValues,
           onBlur: updateVisitedFields,
-          foo: 'bar'
+          foo: 'bar',
+          onRemove: (idx: number) => onMultiFieldRemove(fieldKey, idx),
+          onAdd: () => onMultiAdd(fieldKey),
+          onValueUpdate: ( newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue)
         };
       })
     ]
@@ -138,4 +175,15 @@ type FormFieldInput = {
   name: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onBlur: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onValueUpdate: (pi: any, idx: number) => void;
+  onRemove: (idx:number) => void;
+  onAdd: () => void;
+
 };
+export interface MultiEditorProps<T> {
+  value: T[];
+  onRemove: (idx: number) => void;
+  onValueUpdate: (pi: T, idx: number) => void;
+  onAdd: () => void;
+}
+
