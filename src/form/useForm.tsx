@@ -38,10 +38,10 @@ export function useForm<FIELDS>(
   submit: () => void,
   valueCreators: ValueCreators<FIELDS> = {}
 ) {
-  const [values, setValues] = useState(fields);
-  const [submitted, setSubmitted] = useState(false);
-  const [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
-  const [errors, setErrors] = useState({} as FormErrors<FIELDS>);
+  let [values, setValues] = useState(fields);
+  let [submitted, setSubmitted] = useState(false);
+  let [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
+  let [errors, setErrors] = useState({} as FormErrors<FIELDS>);
 
   function errorRecorder(errors: FormErrors<FIELDS>, setErrors:(e:{})=>void) {
     return function(field: keyof FIELDS, msg: string) {
@@ -62,7 +62,8 @@ export function useForm<FIELDS>(
       errorRecorder(newErrors,(e) => setErrors(e))
     );
     console.log('newErrors ', newErrors);
-    setErrors(newErrors);
+    errors = newErrors;
+    setErrors(errors);
     return newErrors;
   }
 
@@ -71,7 +72,8 @@ export function useForm<FIELDS>(
       [field]: newValue
     });
     doValidation(newValues);
-    setValues(newValues);
+    values=newValues;
+    setValues(values);
     console.log(`setting value for ${field} to `, newValue);
   }
 
@@ -81,6 +83,7 @@ export function useForm<FIELDS>(
       ...(fieldsVisited as any),
       [currentTarget.name]: true
     } as FieldsVisited<FIELDS>;
+    fieldsVisited = newFieldsVisited;
     doValidation(values);
     console.log('newieldsVisited ', newFieldsVisited);
     setFieldsVisited(newFieldsVisited);
