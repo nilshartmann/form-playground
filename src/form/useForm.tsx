@@ -1,4 +1,5 @@
 import { useReducer, useState } from "react";
+import { array } from "prop-types";
 
 type Fields<FIELDS> = { [P in keyof FIELDS]: any };
 
@@ -104,6 +105,7 @@ export function useForm<FIELDS>(
   // ############################ Multi Field Operations
   //
 
+
   const onMultiFieldRemove = (field: keyof FIELDS, idx: number) => {
     let newArray=(values[field] as []).filter((e,myIdx) => idx !== myIdx);
     setValue(field, newArray);
@@ -145,7 +147,8 @@ export function useForm<FIELDS>(
       // individual fields
       ...Array.from(Object.keys(fields)).map(fieldName => {
         const fieldKey = fieldName as keyof FIELDS;
-        return {
+        const isArray = fields[fieldKey] as any instanceof Array;
+        const retval = {
           // @ts-ignore
           value: values[fieldName],
           // @ts-ignore
@@ -153,14 +156,19 @@ export function useForm<FIELDS>(
           name: fieldName,
           onChange: updateValues,
           onBlur: updateVisitedFields,
-          foo: 'bar',
-          onRemove: (idx: number) => onMultiFieldRemove(fieldKey, idx),
-          onAdd: () => onMultiAdd(fieldKey),
-          onValueUpdate: ( newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue)
+          foo: 'bar'
         };
+        
+        if (isArray) {
+          const rv = retval as any;
+          rv['onRemove'] =   (idx: number) => onMultiFieldRemove(fieldKey, idx);
+          rv['onAdd'] = () => onMultiAdd(fieldKey);
+          rv['onValueUpdate'] =  ( newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue);
+        }
+        return retval;
       })
     ]
-  ] as [OverallState<FIELDS>, FormFieldInput[]];
+  ] as [OverallState<FIELDS>, FormFieldInput<any>[]];
 }
 
 type OverallState<FIELDS> = {
@@ -169,21 +177,16 @@ type OverallState<FIELDS> = {
   setValue: (field: keyof FIELDS, value: string) => void;
   handleSubmit: () => void;
 };
-type FormFieldInput = {
-  value: any;
+interface  FormFieldInput<T>  {
+  value: T;
   errorMessages: any;
   name: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onBlur: (e: React.FocusEvent<HTMLInputElement>) => void;
-  onValueUpdate: (pi: any, idx: number) => void;
-  onRemove: (idx:number) => void;
-  onAdd: () => void;
 
 };
-export interface MultiEditorProps<T> {
-  value: T[];
-  onRemove: (idx: number) => void;
+export interface MultiFormInput<T> extends FormFieldInput<T[]> {
   onValueUpdate: (pi: T, idx: number) => void;
+  onRemove: (idx:number) => void;
   onAdd: () => void;
 }
-
