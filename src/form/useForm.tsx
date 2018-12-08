@@ -1,7 +1,8 @@
 import { useReducer, useState } from "react";
-import { array } from "prop-types";
+import { getValueFromObject, setValueOnObject } from './helpers';
 
 type Fields<FIELDS> = { [P in keyof FIELDS]: any };
+type Partial<T> = { [P in keyof T]: T[P] };
 
 interface FormChangeAction {
   field: string;
@@ -18,8 +19,9 @@ type FormAction = FormChangeAction | FieldVisitAction;
 
 type FieldsVisited<FIELDS> = { [P in keyof FIELDS]?: boolean };
 type FormValues<FIELDS> = { [P in keyof FIELDS]: string };
-type FormErrors<FIELDS> = { [P in keyof FIELDS]?: string[] | null };
+type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
 export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
+
 type FormState<FIELDS> = {
   values: FormValues<FIELDS>;
   errors: { [P in keyof FIELDS]?: string[] | null };
@@ -27,10 +29,14 @@ type FormState<FIELDS> = {
 };
 
 export type ValidateFn<FIELDS> = (
-  newValues: Fields<FIELDS>,
+  newValues: Partial<FIELDS>,
   isVisited: (fieldName: keyof FIELDS) => boolean,
-  recordError: (field: keyof FIELDS, msg: string) => void
+  recordError: (field: keyof FIELDS | string, msg: string) => void
 ) => void;
+
+//
+// useFormHook ########################################################################
+//
 
 export function useForm<FIELDS>(
   validate: ValidateFn<FIELDS>,
@@ -43,23 +49,39 @@ export function useForm<FIELDS>(
   let [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
   let [errors, setErrors] = useState({} as FormErrors<FIELDS>);
 
-  function errorRecorder(errors: FormErrors<FIELDS>, setErrors:(e:{})=>void) {
-    return function(field: keyof FIELDS, msg: string) {
+  function errorRecorder(errors: FormErrors<FIELDS> | string, setErrors: (e: {}) => void) {
+    return function (field: keyof FIELDS | string, msg: string) {
+      //TODO Why is that:
+      //[ts] Type 'string | keyof FIELDS' cannot be used to index type 'string | FormErrors<FIELDS>'. [2536]
+      // (parameter) errors: string | FormErrors<FIELDS>
+      // @ts-ignore
       if (!errors[field]) {
+        // @ts-ignore
         errors[field] = [msg];
       } else {
+        // @ts-ignore
         errors[field]!.push(msg);
       }
-      
+      /*      if (field instanceof String) {
+              const currentErrors = getValueFromObject(fields as any, errors);
+              
+              if (!currentErrors) {
+                setValueOnObject(fields as any, errors,[msg]);
+              } else {
+                currentErrors[field]!.push(msg);
+              }
+            } else {
+              throw "Other index types than string are not supported yet. Check " + field + "'s type";
+            }*/
     };
   }
 
-  const doValidation = (newValues: FormValues<FIELDS>, allFields:boolean=submitted) => {
-    const newErrors:FormErrors<FIELDS>={};
+  const doValidation = (newValues: Partial<FIELDS>, allFields: boolean = submitted) => {
+    const newErrors: FormErrors<FIELDS> = {};
     validate(
       newValues,
       fieldName => (fieldsVisited[fieldName] === true) || (allFields === true),
-      errorRecorder(newErrors,(e) => setErrors(e))
+      errorRecorder(newErrors, (e) => setErrors(e))
     );
     console.log('newErrors ', newErrors);
     errors = newErrors;
@@ -67,17 +89,17 @@ export function useForm<FIELDS>(
     return newErrors;
   }
 
-  const setValue = (field: keyof FIELDS, newValue:any) => {
+  const setValue = (field: keyof FIELDS, newValue: any) => {
     const newValues = Object.assign({}, values, {
       [field]: newValue
     });
     doValidation(newValues);
-    values=newValues;
+    values = newValues;
     setValues(values);
     console.log(`setting value for ${field} to `, newValue);
   }
 
-  function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>):void {
+  function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>): void {
     const newFieldsVisited = {
       // https://stackoverflow.com/a/51193091/6134498
       ...(fieldsVisited as any),
@@ -89,14 +111,14 @@ export function useForm<FIELDS>(
     setFieldsVisited(newFieldsVisited);
   }
 
-  function updateValues ({ currentTarget }: React.ChangeEvent<HTMLInputElement>):void  {
+  function updateValues({ currentTarget }: React.ChangeEvent<HTMLInputElement>): void {
     setValue(currentTarget.name as keyof FIELDS, currentTarget.value);
-  }  
+  }
 
   function handleSubmit() {
     setSubmitted(true);
-    const newErrors=doValidation(values, true);
-    if(Object.keys(newErrors).length === 0) {
+    const newErrors = doValidation(values, true);
+    if (Object.keys(newErrors).length === 0) {
       submit();
     } else {
       console.log('Errors found, submit aborted.');
@@ -110,15 +132,15 @@ export function useForm<FIELDS>(
 
 
   const onMultiFieldRemove = (field: keyof FIELDS, idx: number) => {
-    let newArray=(values[field] as []).filter((e,myIdx) => idx !== myIdx);
+    let newArray = (values[field] as []).filter((e, myIdx) => idx !== myIdx);
     setValue(field, newArray);
   }
   //onMultiFieldChange: (pi: Pizza, idx: number) => void;
   const onMultiAdd = (field: keyof FIELDS) => {
-    const initial:any[] = values[field] as any[];
+    const initial: any[] = values[field] as any[];
     const valueCreator: (() => object) | undefined = valueCreators[field];
     if (valueCreator) {
-      const newArray=[...(initial)];
+      const newArray = [...(initial)];
       newArray.push(valueCreator());
       setValue(field, newArray);
     } else {
@@ -129,13 +151,36 @@ export function useForm<FIELDS>(
   }
   const onMultiValueUpdate = (field: keyof FIELDS, idx: number, newValue: any) => {
     console.log('new value ', newValue);
-    const newArray=(values[field] as any[]);
+    const newArray = (values[field] as any[]);
     newArray[idx] = newValue;
     setValue(field, newArray);
   }
 
 
- 
+  function createIndividualFields(fieldName: [keyof FIELDS] | string) {
+    const fieldKey = fieldName as keyof FIELDS;
+    const isArray = fields[fieldKey] as any instanceof Array;
+    const ret = {
+      // @ts-ignore
+      value: values[fieldName],
+      // @ts-ignore
+      errorMessages: errors[fieldName],
+      name: fieldName,
+      onChange: updateValues,
+      onBlur: updateVisitedFields,
+      foo: 'bar'
+    };
+
+    if (isArray) {
+      const rv = ret as any;
+      rv['onRemove'] = (idx: number) => onMultiFieldRemove(fieldKey, idx);
+      rv['onAdd'] = () => onMultiAdd(fieldKey);
+      rv['onValueUpdate'] = (newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue);
+
+    }
+    return ret;
+
+  }
 
   return [
     // "overall" form state
@@ -143,44 +188,23 @@ export function useForm<FIELDS>(
       hasErrors: Object.keys(errors).length > 0,
       values: values,
       setValue: setValue,
-        handleSubmit: handleSubmit
+      handleSubmit: handleSubmit
 
     },
     [
       // individual fields
-      ...Array.from(Object.keys(fields)).map(fieldName => {
-        const fieldKey = fieldName as keyof FIELDS;
-        const isArray = fields[fieldKey] as any instanceof Array;
-        const retval = {
-          // @ts-ignore
-          value: values[fieldName],
-          // @ts-ignore
-          errorMessages: errors[fieldName],
-          name: fieldName,
-          onChange: updateValues,
-          onBlur: updateVisitedFields,
-          foo: 'bar'
-        };
-        
-        if (isArray) {
-          const rv = retval as any;
-          rv['onRemove'] =   (idx: number) => onMultiFieldRemove(fieldKey, idx);
-          rv['onAdd'] = () => onMultiAdd(fieldKey);
-          rv['onValueUpdate'] =  ( newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue);
-        }
-        return retval;
-      })
+      ...Array.from(Object.keys(fields)).map(createIndividualFields)
     ]
   ] as [OverallState<FIELDS>, FormFieldInput<any>[]];
 }
 
 type OverallState<FIELDS> = {
   hasErrors: boolean;
-  values: { [P: string]: string };
+  values: Partial<FIELDS>;
   setValue: (field: keyof FIELDS, value: string) => void;
   handleSubmit: () => void;
 };
-interface  FormFieldInput<T>  {
+interface FormFieldInput<T> {
   value: T;
   errorMessages: any;
   name: string;
@@ -190,6 +214,6 @@ interface  FormFieldInput<T>  {
 };
 export interface MultiFormInput<T> extends FormFieldInput<T[]> {
   onValueUpdate: (pi: T, idx: number) => void;
-  onRemove: (idx:number) => void;
+  onRemove: (idx: number) => void;
   onAdd: () => void;
 }
