@@ -67,19 +67,19 @@ export default function OrderForm() {
 
 
   }
-  const [overallFormState, [vornameInput, nachnameInput, plzInput, pizzenInput]] = useForm<
+  const [overallFormState, propsFor] = useForm<
     OrderFormState
     >(validatePizzaForm, initialValues, submit, valueCreators);
 
   return (
     <div className="Form">
-      <Input label="Vorname" {...vornameInput} />
-      <Input label="Nachname" {...nachnameInput} />
-      <Input label="PLZ" {...plzInput} />
+      <Input label="Vorname" {...propsFor('vorname')} />
+      <Input label="Nachname" {...propsFor('nachname')} />
+      <Input label="PLZ" {...propsFor('plz')} />
       <button onClick={() => overallFormState.setValue("plz", "")}>
         Clear PLZ
       </button>
-      <MultiPizzaEditor {...pizzenInput as MultiFormInput<Pizza>} />
+      <MultiPizzaEditor {...propsFor('pizzen') as MultiFormInput<Pizza>} />
       <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
         Bestellen !
       </button>
@@ -94,7 +94,7 @@ export default function OrderForm() {
 function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
   console.log(props);
   const pizzaEditors = props.value.map(
-    (pi, idx) => <div key={idx}><PizzaEditor
+    (pi:Pizza, idx: number) => <div key={idx}><PizzaEditor
       {...props.subEditorProps(pi,idx)}
     />
       <button onClick={() => props.onRemove(idx)} >entfernen</button>
@@ -145,6 +145,7 @@ function PizzaEditor(props: PizzaEditorProps) {
       <div>Fehler: {props.errorMessages}</div>
     </div>*/
   const fieldProps = props.inputProps;
+  
   return <div>
     <Input label="Größe" {...fieldProps('groesse')} />
     <Input label="Beläge" {...fieldProps('belaege')} />

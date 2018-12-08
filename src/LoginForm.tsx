@@ -25,7 +25,7 @@ const validateLoginForm: ValidateFn<LoginFormState> = function(
 };
 
 export default function LoginForm() {
-  const [overallFormState, [usernameInput, passwordInput]] = useForm<
+  const [overallFormState, propsFor] = useForm<
     LoginFormState
   >(validateLoginForm, {
     username: "",
@@ -38,8 +38,8 @@ export default function LoginForm() {
 
   return (
     <div className="Form">
-      <Input label="Username" {...usernameInput} />
-      <Input label="Password" type="password" {...passwordInput} />
+      <Input label="Username" {...propsFor('username')} />
+      <Input label="Password" type="password" {...propsFor('password')} />
       <button disabled={overallFormState.hasErrors} onClick={submit}>
         Login!
       </button>

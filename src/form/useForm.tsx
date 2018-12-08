@@ -1,5 +1,4 @@
 import { useReducer, useState } from "react";
-import { getValueFromObject, setValueOnObject } from './helpers';
 
 type Fields<FIELDS> = { [P in keyof FIELDS]: any };
 type Partial<T> = { [P in keyof T]: T[P] };
@@ -43,7 +42,7 @@ export function useForm<FIELDS>(
   fields: Fields<FIELDS>,
   submit: () => void,
   valueCreators: ValueCreators<FIELDS> = {}
-): [OverallState<FIELDS>, FormFieldInput<any>[]] {
+): [OverallState<FIELDS>, FormInputFieldPropsProducer<any>] {
   let [values, setValues] = useState(fields);
   let [submitted, setSubmitted] = useState(false);
   let [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
@@ -99,16 +98,22 @@ export function useForm<FIELDS>(
     console.log(`setting value for ${field} to `, newValue);
   }
 
+
   function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>): void {
+    setFieldVisited(currentTarget.name);
+  }
+
+  function setFieldVisited(fieldName:string) {
     const newFieldsVisited = {
       // https://stackoverflow.com/a/51193091/6134498
       ...(fieldsVisited as any),
-      [currentTarget.name]: true
+      [fieldName]: true
     } as FieldsVisited<FIELDS>;
     fieldsVisited = newFieldsVisited;
     doValidation(values);
     console.log('newieldsVisited ', newFieldsVisited);
     setFieldsVisited(newFieldsVisited);
+
   }
 
   function updateValues({ currentTarget }: React.ChangeEvent<HTMLInputElement>): void {
@@ -161,15 +166,20 @@ export function useForm<FIELDS>(
   // 
 
   function subEditorProps<T>(parentFieldName: any, value: T, idx: number): SubEditorProps<T> {
-    const valueChanged = (e: any) => onMultiValueUpdate(parentFieldName, idx, { ...value as any, groesse: e.target.value });
     return {
-      inputProps: function (name: keyof T): FormFieldInput<T> {
+      inputProps: function (childFieldName: keyof T): FormFieldInput<T> {
+        const valueChanged = (e: any) => {
+          const newValue = { ...value as any };
+          newValue[childFieldName as any] = e.target.value;
+          onMultiValueUpdate(parentFieldName, idx, newValue);
+        };
+        const fieldPath = `${parentFieldName}[${idx}].${childFieldName}`;
         return {
-          errorMessages: errors[`${parentFieldName}[${idx}].${name}`],
-          name: name as string,
-          onBlur: valueChanged,
+          errorMessages: errors[fieldPath],
+          name: childFieldName as string,
+          onBlur: () => setFieldVisited(fieldPath),
           onChange: valueChanged,
-          value: (value as any)[name]
+          value: (value as any)[childFieldName]
 
         }
       }
@@ -179,18 +189,17 @@ export function useForm<FIELDS>(
   // 
   // Construction of return value
   //
-  function createIndividualFields(fieldName: [keyof FIELDS] | string) {
+  function createIndividualFields<T>(fieldName: [keyof FIELDS] | string): FormFieldInput<any> {
     const fieldKey = fieldName as keyof FIELDS;
     const isArray = fields[fieldKey] as any instanceof Array;
-    const ret = {
+    const ret: FormFieldInput<any> = {
       // @ts-ignore
       value: values[fieldName],
       // @ts-ignore
       errorMessages: errors[fieldName],
-      name: fieldName,
+      name: fieldName as string,
       onChange: updateValues,
-      onBlur: updateVisitedFields,
-      foo: 'bar'
+      onBlur: updateVisitedFields
     };
 
     if (isArray) {
@@ -198,8 +207,8 @@ export function useForm<FIELDS>(
       const rv = ret as any;
       rv['onRemove'] = (idx: number) => onMultiFieldRemove(fieldKey, idx);
       rv['onAdd'] = () => onMultiAdd(fieldKey);
-//      rv['onValueUpdate'] = (newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue);
-      rv['subEditorProps'] = (newValue: any, idx: number) => subEditorProps(fieldName, newValue, idx, );
+      //      rv['onValueUpdate'] = (newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue);
+      rv['subEditorProps'] = (newValue: any, idx: number) => subEditorProps(fieldName, newValue, idx);
 
     }
     return ret;
@@ -215,11 +224,8 @@ export function useForm<FIELDS>(
       handleSubmit: handleSubmit
 
     },
-    [
-      // individual fields
-      ...Array.from(Object.keys(fields)).map(createIndividualFields)
-    ]
-  ] as [OverallState<FIELDS>, FormFieldInput<any>[]];
+    createIndividualFields
+  ] as [OverallState<FIELDS>, FormInputFieldPropsProducer<any>];
 }
 
 type OverallState<FIELDS> = {
@@ -229,7 +235,7 @@ type OverallState<FIELDS> = {
   handleSubmit: () => void;
 };
 interface FormFieldInput<T> {
-  value: T;
+  value: any;
   errorMessages: any;
   name: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -249,5 +255,5 @@ export interface SubEditorProps<T> {
 }
 
 export type FormInputFieldPropsProducer<T> =
-  (key: keyof T) => FormFieldInput<any>;
+  (key: keyof T) => FormFieldInput<T>;
 
