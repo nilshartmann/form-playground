@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Input } from "./form/Input";
 
 // Form Logic
-import { ValidateFn, useForm, ValueCreators, MultiFormInput } from "./form/useForm";
+import { ValidateFn, useForm, ValueCreators, MultiFormInput, SubEditorProps } from "./form/useForm";
 
 interface OrderFormState {
   vorname: string;
@@ -45,7 +45,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   }
   newFormInput.pizzen.forEach((pizza, idx) =>  {
     if (pizza.groesse > 50) {
-      recordError(`pizzen[${idx}].groesse`, 'kaputt');
+      recordError(`pizzen[${idx}].groesse`, 'Eine Pizza darf maximal 50 cm groß sein');
     }
   });
   
@@ -95,9 +95,7 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
   console.log(props);
   const pizzaEditors = props.value.map(
     (pi, idx) => <div key={idx}><PizzaEditor
-      {...props}
-      pizza={pi}
-      onChange={(pi) => props.onValueUpdate(pi, idx)}
+      {...props.subEditorProps(pi,idx)}
     />
       <button onClick={() => props.onRemove(idx)} >entfernen</button>
     </div>
@@ -112,10 +110,7 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
   </div>
 }
 
-interface PizzaEditorProps {
-  pizza: Pizza;
-  onChange: (newPizza: Pizza) => void;
-  errorMessages: any;
+interface PizzaEditorProps extends SubEditorProps<Pizza> {
 }
 
 /*
@@ -149,10 +144,10 @@ function PizzaEditor(props: PizzaEditorProps) {
       <Input label="Beläge" {...belaegeInput} />
       <div>Fehler: {props.errorMessages}</div>
     </div>*/
-  const { onChange, pizza } = props;
+  const fieldProps = props.inputProps;
   return <div>
-    <Input label="Größe" onBlur={(e: any) => onChange({ ...pizza, groesse: e.target.value })} />
-    <Input label="Beläge" onBlur={(e: any) => onChange({ ...pizza, belaege: e.target.value })} />
+    <Input label="Größe" {...fieldProps('groesse')} />
+    <Input label="Beläge" {...fieldProps('belaege')} />
   </div>
 
 }

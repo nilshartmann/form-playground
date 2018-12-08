@@ -43,7 +43,7 @@ export function useForm<FIELDS>(
   fields: Fields<FIELDS>,
   submit: () => void,
   valueCreators: ValueCreators<FIELDS> = {}
-) {
+): [OverallState<FIELDS>, FormFieldInput<any>[]] {
   let [values, setValues] = useState(fields);
   let [submitted, setSubmitted] = useState(false);
   let [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
@@ -156,7 +156,29 @@ export function useForm<FIELDS>(
     setValue(field, newArray);
   }
 
+  //
+  // ############################# Sub-Object Operations
+  // 
 
+  function subEditorProps<T>(parentFieldName: any, value: T, idx: number): SubEditorProps<T> {
+    const valueChanged = (e: any) => onMultiValueUpdate(parentFieldName, idx, { ...value as any, groesse: e.target.value });
+    return {
+      inputProps: function (name: keyof T): FormFieldInput<T> {
+        return {
+          errorMessages: errors[`${parentFieldName}[${idx}].${name}`],
+          name: name as string,
+          onBlur: valueChanged,
+          onChange: valueChanged,
+          value: (value as any)[name]
+
+        }
+      }
+    }
+  }
+
+  // 
+  // Construction of return value
+  //
   function createIndividualFields(fieldName: [keyof FIELDS] | string) {
     const fieldKey = fieldName as keyof FIELDS;
     const isArray = fields[fieldKey] as any instanceof Array;
@@ -172,10 +194,12 @@ export function useForm<FIELDS>(
     };
 
     if (isArray) {
+      console.log('multiEditor value ', values)
       const rv = ret as any;
       rv['onRemove'] = (idx: number) => onMultiFieldRemove(fieldKey, idx);
       rv['onAdd'] = () => onMultiAdd(fieldKey);
-      rv['onValueUpdate'] = (newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue);
+//      rv['onValueUpdate'] = (newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue);
+      rv['subEditorProps'] = (newValue: any, idx: number) => subEditorProps(fieldName, newValue, idx, );
 
     }
     return ret;
@@ -216,4 +240,14 @@ export interface MultiFormInput<T> extends FormFieldInput<T[]> {
   onValueUpdate: (pi: T, idx: number) => void;
   onRemove: (idx: number) => void;
   onAdd: () => void;
+  subEditorProps(value: any, idx: number): SubEditorProps<any>
 }
+
+export interface SubEditorProps<T> {
+  inputProps: FormInputFieldPropsProducer<T>;
+
+}
+
+export type FormInputFieldPropsProducer<T> =
+  (key: keyof T) => FormFieldInput<any>;
+
