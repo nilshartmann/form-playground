@@ -3,12 +3,18 @@ import React, { useState } from "react";
 import { Input } from "./form/Input";
 
 // Form Logic
-import { ValidateFn, useForm, ValueCreators, MultiFormInput, SubEditorProps, RecordError, ValidateDelayed, DelayedValidatorFunction } from "./form/useForm";
+import { ValidateFn, useForm, ValueCreators, MultiFormInput, SubEditorProps, RecordError, ValidateDelayed, DelayedValidatorFunction, CustomEditorProps } from "./form/useForm";
+
+interface Drink {
+  name: string;
+  size: string;
+}
 
 interface OrderFormState {
   vorname: string;
   nachname: string;
   plz: string;
+  drinks: Drink[];
   pizzen: Pizza[];
 }
 
@@ -41,7 +47,6 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
 
   if (isVisited('plz')) {
     const validation: DelayedValidatorFunction<OrderFormState> = (currentValue, errorRecorder) => {
-      console.log('resolving promise');
       if (currentValue.plz === newFormInput.plz) {
         if (['22305', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
           errorRecorder("plz", "Postleitzahl nicht im Liefergebiet", true);
@@ -49,7 +54,6 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
       }
     }
     validateDelayed('plz', new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)));
-    recordError("plz", "", true);
   }
 
 
@@ -67,7 +71,8 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     vorname: "test",
     nachname: "",
     plz: "",
-    pizzen: []
+    pizzen: [],
+    drinks: []
   };
   const valueCreators: ValueCreators<OrderFormState> = {
     pizzen: () => { return { groesse: 60, belaege: 'alle' } }
@@ -88,6 +93,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
         <button onClick={() => overallFormState.setValue("plz", "")}>
           Clear PLZ
       </button>
+        <DrinksEditor {...propsFor('drinks')}/>
         <MultiPizzaEditor {...propsFor('pizzen') as MultiFormInput<Pizza>} />
         <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
           Bestellen !
@@ -97,6 +103,34 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
       </button>
       </div>
     );
+  }
+
+  const drinks:Drink[] = [ 
+    {name: 'FritzCola', size: 'klein'},
+    {name: 'FritzCola', size: 'mittel'},
+    {name: 'Wasser', size: 'klein'},
+    {name: 'Wasser', size: 'groß'},
+    {name: 'Bier', size: 'groß'},
+
+  ];
+  function DrinksEditor(props: CustomEditorProps<Drink[]>) {
+    const remove = (idx:number) => { 
+      return props.value.filter( (d,i) => i!==idx);
+    }
+    const add = (drink:Drink) => { 
+      return props.value.concat(drink);
+    }
+
+    return <div className='drinksEditor'>
+      <div>Getränke hinzufügen</div>
+      {drinks.map( d => 
+        <div onClick={() => props.onValueChange(add(d))} className="drinkSelect"> {d.name} ({d.size}) </div>
+      )}  
+      <div>Gewünschte Getränke</div>
+      { props.value.map( (d:Drink, idx:number) => 
+        <li><span className='drinksDisplay' >{d.name} ({d.size})</span> <button onClick={() => props.onValueChange(remove(idx))}>x</button></li>
+      )}      
+      </div>
   }
 
 

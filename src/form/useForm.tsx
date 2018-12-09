@@ -202,12 +202,15 @@ export function useForm<FIELDS>(
           onMultiValueUpdate(parentFieldName, idx, newValue);
         };
         const fieldPath = `${parentFieldName}[${idx}].${childFieldName}`;
+        const onBlur = () => setFieldVisited(fieldPath);
         return {
           errorMessages: errors[fieldPath],
           name: childFieldName as string,
-          onBlur: () => setFieldVisited(fieldPath),
+          onBlur: onBlur,
           onChange: valueChanged,
-          value: (value as any)[childFieldName]
+          value: (value as any)[childFieldName],
+          onValueChange: valueChanged,
+          onBlurChange: onBlur
         }
       }
     }
@@ -231,7 +234,9 @@ export function useForm<FIELDS>(
       errorMessages: errors[fieldName],
       name: fieldName as string,
       onChange: updateValues,
-      onBlur: updateVisitedFields
+      onBlur: updateVisitedFields,
+      onValueChange: (newValue: any) => setValue(fieldKey, newValue),
+      onBlurChange: () => setFieldVisited(fieldKey as string)
     };
 
     if (isArray) {
@@ -265,14 +270,28 @@ type OverallState<FIELDS> = {
   setValue: (field: keyof FIELDS, value: string) => void;
   handleSubmit: () => void;
 };
-interface FormFieldInput {
+type HTMLInputEventEmitter =(e: React.ChangeEvent<HTMLInputElement>) => void;
+type HTMLFocusEventEmitter =(e: React.FocusEvent<HTMLInputElement>) => void;
+type InputEventEmitter =(newValue: any) => void;
+type FocusEventEmitter =() => void;
+
+export interface FormFieldInput {
   value: any;
   errorMessages: any;
   name: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onBlur: (e: React.FocusEvent<HTMLInputElement>) => void;
-
+  onChange: HTMLInputEventEmitter ;
+  onBlur: HTMLFocusEventEmitter ;
+  onValueChange: InputEventEmitter;
+  onBlurChange: FocusEventEmitter
 };
+
+export interface CustomEditorProps<T> {
+  value: T;
+  errorMessages: any;
+  onValueChange: InputEventEmitter;
+  onBlurChange: FocusEventEmitter
+}
+
 export interface MultiFormInput<T> extends FormFieldInput {
   onValueUpdate: (pi: T, idx: number) => void;
   onRemove: (idx: number) => void;
@@ -288,7 +307,10 @@ export interface SubEditorProps<T> {
 export type FormInputFieldPropsProducer<T> =
   (key: keyof T) => FormFieldInput;
 
-
+export enum FieldType {
+  SINGLE, MULTI, CUSTOM 
+}
+  
 /*function ACompoent() {
   const [state, setState] = useState({wert: 0, ungerade: false});
   const handleClick = () => { 
