@@ -1,35 +1,32 @@
-import { useReducer, useState } from "react";
+import {  useState } from "react";
+
+function errorRecorder<FIELDS>(errors: FormErrors<FIELDS> | string) {
+  return function (field: keyof FIELDS | string, msg: string) {
+    //TODO Why is that:
+    //[ts] Type 'string | keyof FIELDS' cannot be used to index type 'string | FormErrors<FIELDS>'. [2536]
+    // (parameter) errors: string | FormErrors<FIELDS>
+    // @ts-ignore
+    if (!errors[field]) {
+      // @ts-ignore
+      errors[field] = [msg];
+    } else {
+      // @ts-ignore
+      errors[field]!.push(msg);
+    }
+  };
+}
+
 
 type Fields<FIELDS> = { [P in keyof FIELDS]: any };
 type Partial<T> = { [P in keyof T]: T[P] };
 
-interface FormChangeAction {
-  field: string;
-  type: "valueChange";
-  newValue: string;
-}
-
-interface FieldVisitAction {
-  field: string;
-  type: "fieldVisit";
-}
-
-type FormAction = FormChangeAction | FieldVisitAction;
-
-type FieldsVisited<FIELDS> = { [P in keyof FIELDS]?: boolean };
-type FormValues<FIELDS> = { [P in keyof FIELDS]: string };
+type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
 type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
 export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
 
-type FormState<FIELDS> = {
-  values: FormValues<FIELDS>;
-  errors: { [P in keyof FIELDS]?: string[] | null };
-  fieldsVisited: FieldsVisited<FIELDS>;
-};
-
 export type ValidateFn<FIELDS> = (
   newValues: Partial<FIELDS>,
-  isVisited: (fieldName: keyof FIELDS) => boolean,
+  isVisited: (fieldName: keyof FIELDS | string) => boolean,
   recordError: (field: keyof FIELDS | string, msg: string) => void
 ) => void;
 
@@ -48,44 +45,28 @@ export function useForm<FIELDS>(
   let [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
   let [errors, setErrors] = useState({} as FormErrors<FIELDS>);
 
-  function errorRecorder(errors: FormErrors<FIELDS> | string, setErrors: (e: {}) => void) {
-    return function (field: keyof FIELDS | string, msg: string) {
-      //TODO Why is that:
-      //[ts] Type 'string | keyof FIELDS' cannot be used to index type 'string | FormErrors<FIELDS>'. [2536]
-      // (parameter) errors: string | FormErrors<FIELDS>
-      // @ts-ignore
-      if (!errors[field]) {
-        // @ts-ignore
-        errors[field] = [msg];
-      } else {
-        // @ts-ignore
-        errors[field]!.push(msg);
-      }
-      /*      if (field instanceof String) {
-              const currentErrors = getValueFromObject(fields as any, errors);
-              
-              if (!currentErrors) {
-                setValueOnObject(fields as any, errors,[msg]);
-              } else {
-                currentErrors[field]!.push(msg);
-              }
-            } else {
-              throw "Other index types than string are not supported yet. Check " + field + "'s type";
-            }*/
-    };
-  }
-
+  //
+  // validation ##############################################################
+  // 
   const doValidation = (newValues: Partial<FIELDS>, allFields: boolean = submitted) => {
     const newErrors: FormErrors<FIELDS> = {};
     validate(
       newValues,
       fieldName => (fieldsVisited[fieldName] === true) || (allFields === true),
-      errorRecorder(newErrors, (e) => setErrors(e))
+      errorRecorder(newErrors)
     );
     console.log('newErrors ', newErrors);
     errors = newErrors;
     setErrors(errors);
     return newErrors;
+  }
+
+  //
+  // update values etc. ##############################################################
+  // 
+
+  function updateValues({ currentTarget }: React.ChangeEvent<HTMLInputElement>): void {
+    setValue(currentTarget.name as keyof FIELDS, currentTarget.value);
   }
 
   const setValue = (field: keyof FIELDS, newValue: any) => {
@@ -97,7 +78,6 @@ export function useForm<FIELDS>(
     setValues(values);
     console.log(`setting value for ${field} to `, newValue);
   }
-
 
   function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>): void {
     setFieldVisited(currentTarget.name);
@@ -116,10 +96,6 @@ export function useForm<FIELDS>(
 
   }
 
-  function updateValues({ currentTarget }: React.ChangeEvent<HTMLInputElement>): void {
-    setValue(currentTarget.name as keyof FIELDS, currentTarget.value);
-  }
-
   function handleSubmit() {
     setSubmitted(true);
     const newErrors = doValidation(values, true);
@@ -132,7 +108,7 @@ export function useForm<FIELDS>(
   }
 
   //
-  // ############################ Multi Field Operations
+  // ############################################################ Multi Field Operations
   //
 
 
@@ -162,12 +138,12 @@ export function useForm<FIELDS>(
   }
 
   //
-  // ############################# Sub-Object Operations
+  // ############################################################## Sub-Object Operations
   // 
 
   function subEditorProps<T>(parentFieldName: any, value: T, idx: number): SubEditorProps<T> {
     return {
-      inputProps: function (childFieldName: keyof T): FormFieldInput<T> {
+      inputProps: function (childFieldName: keyof T): FormFieldInput {
         const valueChanged = (e: any) => {
           const newValue = { ...value as any };
           newValue[childFieldName as any] = e.target.value;
@@ -180,7 +156,6 @@ export function useForm<FIELDS>(
           onBlur: () => setFieldVisited(fieldPath),
           onChange: valueChanged,
           value: (value as any)[childFieldName]
-
         }
       }
     }
@@ -189,10 +164,15 @@ export function useForm<FIELDS>(
   // 
   // Construction of return value
   //
-  function createIndividualFields<T>(fieldName: [keyof FIELDS] | string): FormFieldInput<any> {
+
+ // Der FormInputFieldProducer könnte auch noch minimalkonfiguration nehmen, z.B. Multi oder nicht, bzw. HTMLInputField oder eigenes.
+
+ // komplett auf Pfade umstellen sodass es keinen unterschied mehr macht aus welcher tiefe man setValue aufruft.
+
+  function createIndividualFields<T>(fieldName: [keyof FIELDS] | string): FormFieldInput {
     const fieldKey = fieldName as keyof FIELDS;
     const isArray = fields[fieldKey] as any instanceof Array;
-    const ret: FormFieldInput<any> = {
+    const ret: FormFieldInput = {
       // @ts-ignore
       value: values[fieldName],
       // @ts-ignore
@@ -207,7 +187,6 @@ export function useForm<FIELDS>(
       const rv = ret as any;
       rv['onRemove'] = (idx: number) => onMultiFieldRemove(fieldKey, idx);
       rv['onAdd'] = () => onMultiAdd(fieldKey);
-      //      rv['onValueUpdate'] = (newValue: any, idx: number) => onMultiValueUpdate(fieldKey, idx, newValue);
       rv['subEditorProps'] = (newValue: any, idx: number) => subEditorProps(fieldName, newValue, idx);
 
     }
@@ -234,7 +213,7 @@ type OverallState<FIELDS> = {
   setValue: (field: keyof FIELDS, value: string) => void;
   handleSubmit: () => void;
 };
-interface FormFieldInput<T> {
+interface FormFieldInput {
   value: any;
   errorMessages: any;
   name: string;
@@ -242,7 +221,7 @@ interface FormFieldInput<T> {
   onBlur: (e: React.FocusEvent<HTMLInputElement>) => void;
 
 };
-export interface MultiFormInput<T> extends FormFieldInput<T[]> {
+export interface MultiFormInput<T> extends FormFieldInput {
   onValueUpdate: (pi: T, idx: number) => void;
   onRemove: (idx: number) => void;
   onAdd: () => void;
@@ -255,5 +234,5 @@ export interface SubEditorProps<T> {
 }
 
 export type FormInputFieldPropsProducer<T> =
-  (key: keyof T) => FormFieldInput<T>;
+  (key: keyof T) => FormFieldInput;
 

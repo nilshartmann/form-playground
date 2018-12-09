@@ -44,33 +44,29 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     recordError('pizzen', 'Es muss mindestens eine Pizza bestellt werden');
   }
   newFormInput.pizzen.forEach((pizza, idx) =>  {
-    if (pizza.groesse > 50) {
+    if (isVisited(`pizzen[${idx}].groesse`) && pizza.groesse > 50) {
       recordError(`pizzen[${idx}].groesse`, 'Eine Pizza darf maximal 50 cm groß sein');
     }
   });
   
 }
+const initialValues: OrderFormState = {
+  vorname: "test",
+  nachname: "",
+  plz: "",
+  pizzen: []
+};
+const valueCreators: ValueCreators<OrderFormState> = {
+  pizzen: () => { return { groesse: 60, belaege: 'alle' } }
+}
+
 
 export default function OrderForm() {
   function submit() {
     console.log("submitting", overallFormState.values);
   }
 
-  const initialValues: OrderFormState = {
-    vorname: "test",
-    nachname: "",
-    plz: "",
-    pizzen: []
-  };
-  const valueCreators: ValueCreators<OrderFormState> = {
-    pizzen: () => { return { groesse: 60, belaege: 'alle' } }
-
-
-  }
-  const [overallFormState, propsFor] = useForm<
-    OrderFormState
-    >(validatePizzaForm, initialValues, submit, valueCreators);
-
+  const [overallFormState, propsFor] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
   return (
     <div className="Form">
       <Input label="Vorname" {...propsFor('vorname')} />
@@ -92,65 +88,26 @@ export default function OrderForm() {
 
 
 function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
-  console.log(props);
-  const pizzaEditors = props.value.map(
-    (pi:Pizza, idx: number) => <div key={idx}><PizzaEditor
-      {...props.subEditorProps(pi,idx)}
-    />
-      <button onClick={() => props.onRemove(idx)} >entfernen</button>
-    </div>
-
-  );
-
   return <div>
-    {pizzaEditors}
+    {
+      props.value.map((pi:Pizza, idx: number) => 
+        <div key={idx}>
+          <PizzaEditor {...props.subEditorProps(pi,idx)} />
+          <button onClick={() => props.onRemove(idx)} >entfernen</button>
+        </div>
+      )
+    }
     pizzen Errors:{ props.errorMessages}
-
     <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
   </div>
 }
 
-interface PizzaEditorProps extends SubEditorProps<Pizza> {
-}
-
-/*
-const pizzaValidator:ValidateFn<Pizza> = function (
-  newPizza,
-  isVisited,
-  recordError
-) {
-  if (newPizza.groesse >= 70) {
-    recordError('groesse', "Pizza darf maximal 70 cm groß sein");
-  }
-
-}
-*/
-/*
-function adapter<T> (props:{onChange: (newPizza:Pizza) => void}, validate: ValidateFn<T>) {
-    return 
-}
-*/
-function PizzaEditor(props: PizzaEditorProps) {
-
-  /*  const [overallFormState, [groesseInput, belaegeInput]] = useForm<
-    Pizza
-    >((newPizza, isVisited, recordError) => {props.onChange(newPizza); pizzaValidator(newPizza, isVisited, recordError)}, props.pizza, ()=>{});
-  
-  
-    const { onChange, pizza } = props;
-    console.log('pie props ', props);
-    return <div>
-      <Input label="Größe" {...groesseInput} />
-      <Input label="Beläge" {...belaegeInput} />
-      <div>Fehler: {props.errorMessages}</div>
-    </div>*/
+function PizzaEditor(props: SubEditorProps<Pizza>) {
   const fieldProps = props.inputProps;
-  
   return <div>
     <Input label="Größe" {...fieldProps('groesse')} />
     <Input label="Beläge" {...fieldProps('belaege')} />
   </div>
-
 }
 
 
