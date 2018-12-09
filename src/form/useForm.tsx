@@ -198,7 +198,7 @@ export function useForm<FIELDS>(
       inputProps: function (childFieldName: keyof T): FormFieldInput {
         const valueChanged = (e: any) => {
           const newValue = { ...value as any };
-          newValue[childFieldName as any] = e.target.value;
+          newValue[childFieldName as any] = e;
           onMultiValueUpdate(parentFieldName, idx, newValue);
         };
         const fieldPath = `${parentFieldName}[${idx}].${childFieldName}`;
@@ -207,7 +207,7 @@ export function useForm<FIELDS>(
           errorMessages: errors[fieldPath],
           name: childFieldName as string,
           onBlur: onBlur,
-          onChange: valueChanged,
+          onChange: (e:React.ChangeEvent<HTMLInputElement>) => valueChanged(e.target.value),
           value: (value as any)[childFieldName],
           onValueChange: valueChanged,
           onBlurChange: onBlur

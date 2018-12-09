@@ -20,7 +20,7 @@ interface OrderFormState {
 
 interface Pizza {
   groesse: number;
-  belaege: string;
+  belaege: string[];
 }
 
 // validatePizzaForm jetzt "kontextlos", dh zum Beispiel von außen testbar
@@ -75,7 +75,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     drinks: []
   };
   const valueCreators: ValueCreators<OrderFormState> = {
-    pizzen: () => { return { groesse: 60, belaege: 'alle' } }
+    pizzen: () => { return { groesse: 60, belaege: [] } }
   }
 
 
@@ -123,15 +123,42 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
 
     return <div className='drinksEditor'>
       <div>Getränke hinzufügen</div>
-      {drinks.map( d => 
-        <div onClick={() => props.onValueChange(add(d))} className="drinkSelect"> {d.name} ({d.size}) </div>
+      {drinks.map( (d,idx)  => 
+        <div key={idx} onClick={() => props.onValueChange(add(d))} className="drinkSelect"> 
+          {d.name} ({d.size}) 
+        </div>
       )}  
       <div>Gewünschte Getränke</div>
       { props.value.map( (d:Drink, idx:number) => 
-        <li><span className='drinksDisplay' >{d.name} ({d.size})</span> <button onClick={() => props.onValueChange(remove(idx))}>x</button></li>
+        <li key={idx}>
+          <span className='drinksDisplay' >{d.name} ({d.size})</span> 
+          <button onClick={() => props.onValueChange(remove(idx))}>x</button>
+        </li>
       )}      
       </div>
   }
+  const alleBelaege = ["Oliven", "Feta", "Zwiebeln", "Mais", "Pilze"];
+  function BelagEditor(props: CustomEditorProps<string[]>) {
+    console.log('BElagEditorProps ', props);
+    const remove = (idx:number) => { 
+      return props.value.filter( (d,i) => i!==idx);
+    }
+    const add = (belag:string) => { 
+      return props.value.concat(belag);
+    }
+
+    return <div className='drinksEditor'>
+      <div>Getränke hinzufügen</div>
+      {alleBelaege.map( (d, idx) => 
+        <div key={idx} onClick={() => props.onValueChange(add(d))} className="drinkSelect"> {d}  </div>
+      )}  
+      <div>Gewünschte Beläge</div>
+      { props.value.map( (d:string, idx:number) => 
+        <li key={idx}><span className='drinksDisplay' >{d} </span> <button onClick={() => props.onValueChange(remove(idx))}>x</button></li>
+      )}      
+      </div>
+  }
+
 
 
   function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
@@ -153,7 +180,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     const fieldProps = props.inputProps;
     return <div>
       <Input label="Größe" {...fieldProps('groesse')} />
-      <Input label="Beläge" {...fieldProps('belaege')} />
+      <BelagEditor {...fieldProps('belaege')} />
     </div>
   }
 
