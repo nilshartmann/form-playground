@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Input } from "./form/Input";
 
 // Form Logic
-import { ValidateFn, useForm, ValueCreators, MultiFormInput, SubEditorProps } from "./form/useForm";
+import { ValidateFn, useForm, ValueCreators, MultiFormInput, SubEditorProps, RecordError, ValidateDelayed, DelayedValidatorFunction } from "./form/useForm";
 
 interface OrderFormState {
   vorname: string;
@@ -21,11 +21,9 @@ interface Pizza {
 const validatePizzaForm: ValidateFn<OrderFormState> = function (
   newFormInput,
   isVisited,
-  recordError
+  recordError: RecordError<OrderFormState>,
+  validateDelayed: ValidateDelayed<OrderFormState>
 ) {
-  if (newFormInput.vorname === "a") {
-    window.setTimeout(() => recordError("vorname", "NAY"), 5000);
-  }
 
   if (isVisited("vorname") && newFormInput.vorname.length < 3) {
     recordError("vorname", "Der Vorname muss mindestens 3 Zeichen lang sein");
@@ -40,75 +38,90 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
       recordError("nachname", "Vorname muss kürzer als Nachname sein");
     }
   }
+
+  if (isVisited('plz')) {
+    const validation: DelayedValidatorFunction<OrderFormState> = (currentValue, errorRecorder) => {
+      console.log('resolving promise');
+      if (currentValue.plz === newFormInput.plz) {
+        if (['22305', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
+          errorRecorder("plz", "Postleitzahl nicht im Liefergebiet", true);
+        }
+      }
+    }
+    validateDelayed('plz', new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)));
+    recordError("plz", "", true);
+  }
+
+
   if (newFormInput.pizzen.length === 0) {
-    recordError('pizzen', 'Es muss mindestens eine Pizza bestellt werden');
-  }
-  newFormInput.pizzen.forEach((pizza, idx) =>  {
-    if (isVisited(`pizzen[${idx}].groesse`) && pizza.groesse > 50) {
-      recordError(`pizzen[${idx}].groesse`, 'Eine Pizza darf maximal 50 cm groß sein');
+      recordError('pizzen', 'Es muss mindestens eine Pizza bestellt werden');
     }
-  });
-  
-}
-const initialValues: OrderFormState = {
-  vorname: "test",
-  nachname: "",
-  plz: "",
-  pizzen: []
-};
-const valueCreators: ValueCreators<OrderFormState> = {
-  pizzen: () => { return { groesse: 60, belaege: 'alle' } }
-}
+    newFormInput.pizzen.forEach((pizza, idx) => {
+      if (isVisited(`pizzen[${idx}].groesse`) && pizza.groesse > 50) {
+        recordError(`pizzen[${idx}].groesse`, 'Eine Pizza darf maximal 50 cm groß sein');
+      }
+    });
 
-
-export default function OrderForm() {
-  function submit() {
-    console.log("submitting", overallFormState.values);
+  }
+  const initialValues: OrderFormState = {
+    vorname: "test",
+    nachname: "",
+    plz: "",
+    pizzen: []
+  };
+  const valueCreators: ValueCreators<OrderFormState> = {
+    pizzen: () => { return { groesse: 60, belaege: 'alle' } }
   }
 
-  const [overallFormState, propsFor] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
-  return (
-    <div className="Form">
-      <Input label="Vorname" {...propsFor('vorname')} />
-      <Input label="Nachname" {...propsFor('nachname')} />
-      <Input label="PLZ" {...propsFor('plz')} />
-      <button onClick={() => overallFormState.setValue("plz", "")}>
-        Clear PLZ
+
+  export default function OrderForm() {
+    function submit() {
+      console.log("submitting", overallFormState.values);
+    }
+
+    const [overallFormState, propsFor] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
+    return (
+      <div className="Form">
+        <Input label="Vorname" {...propsFor('vorname')} />
+        <Input label="Nachname" {...propsFor('nachname')} />
+        <Input label="PLZ" {...propsFor('plz')} />
+        <button onClick={() => overallFormState.setValue("plz", "")}>
+          Clear PLZ
       </button>
-      <MultiPizzaEditor {...propsFor('pizzen') as MultiFormInput<Pizza>} />
-      <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
-        Bestellen !
+        <MultiPizzaEditor {...propsFor('pizzen') as MultiFormInput<Pizza>} />
+        <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
+          Bestellen !
       </button>
-      <button onClick={() => console.log(overallFormState.values)}>
-        Show Form State
+        <button onClick={() => console.log(overallFormState.values)}>
+          Show Form State
       </button>
+      </div>
+    );
+  }
+
+
+  function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
+    return <div>
+      {
+        props.value.map((pi: Pizza, idx: number) =>
+          <div key={idx}>
+            <PizzaEditor {...props.subEditorProps(pi, idx)} />
+            <button onClick={() => props.onRemove(idx)} >entfernen</button>
+          </div>
+        )
+      }
+      pizzen Errors:{props.errorMessages}
+      <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
     </div>
-  );
-}
+  }
 
-
-function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
-  return <div>
-    {
-      props.value.map((pi:Pizza, idx: number) => 
-        <div key={idx}>
-          <PizzaEditor {...props.subEditorProps(pi,idx)} />
-          <button onClick={() => props.onRemove(idx)} >entfernen</button>
-        </div>
-      )
-    }
-    pizzen Errors:{ props.errorMessages}
-    <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
-  </div>
-}
-
-function PizzaEditor(props: SubEditorProps<Pizza>) {
-  const fieldProps = props.inputProps;
-  return <div>
-    <Input label="Größe" {...fieldProps('groesse')} />
-    <Input label="Beläge" {...fieldProps('belaege')} />
-  </div>
-}
+  function PizzaEditor(props: SubEditorProps<Pizza>) {
+    const fieldProps = props.inputProps;
+    return <div>
+      <Input label="Größe" {...fieldProps('groesse')} />
+      <Input label="Beläge" {...fieldProps('belaege')} />
+    </div>
+  }
 
 
 

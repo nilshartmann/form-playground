@@ -1,12 +1,17 @@
-import {  useState } from "react";
+import { useState } from "react";
 
-function errorRecorder<FIELDS>(errors: FormErrors<FIELDS> | string) {
-  return function (field: keyof FIELDS | string, msg: string) {
+
+
+//
+// Validation Helpers ###########################################################
+//
+function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>) {
+  return function (field: keyof FIELDS | string, msg: string, exclusive: boolean = false) {
     //TODO Why is that:
     //[ts] Type 'string | keyof FIELDS' cannot be used to index type 'string | FormErrors<FIELDS>'. [2536]
     // (parameter) errors: string | FormErrors<FIELDS>
     // @ts-ignore
-    if (!errors[field]) {
+    if (!errors[field] || exclusive) {
       // @ts-ignore
       errors[field] = [msg];
     } else {
@@ -15,6 +20,32 @@ function errorRecorder<FIELDS>(errors: FormErrors<FIELDS> | string) {
     }
   };
 }
+function createValidateDelayed<FIELDS>(newErrors: FormErrors<FIELDS>, setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
+  validate: ValidateFn<FIELDS>
+): ValidateDelayed<FIELDS> {
+  const validateDelayed: ValidateDelayed<FIELDS> = function (field: keyof FIELDS | string, promise: Promise<DelayedValidatorFunction<FIELDS>>) {
+    newErrors[field] = undefined;
+    function updateState(newState: State<FIELDS>, dvf: DelayedValidatorFunction<FIELDS>): State<FIELDS> {
+      const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
+      const errorRecorder = createErrorRecorder(newErrors);
+      // first validate the on async field
+      dvf(newState.values, errorRecorder);
+      // then validate anything else...
+      validate(newState.values,
+        fieldName => (newState.fieldsVisited[fieldName] === true),
+        errorRecorder,
+        // ...omitting anything that should be validated delayed
+        DontValidateAnythingDelayed
+      );
+      return { ...newState, errors: newErrors }
+    }
+    // etState: 
+    promise.then((dvf: DelayedValidatorFunction<FIELDS>) => setState((newState) => updateState(newState, dvf)));
+  }
+  return validateDelayed;
+
+}
+const DontValidateAnythingDelayed: ValidateDelayed<any> = (f, p) => { };
 
 
 type Fields<FIELDS> = { [P in keyof FIELDS]: any };
@@ -22,17 +53,35 @@ type Partial<T> = { [P in keyof T]: T[P] };
 
 type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
 type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
+type DoValidation<FIELDS> = (newValues: Partial<FIELDS>, allFields?: boolean, initialErros?: FormErrors<FIELDS>) => FormErrors<FIELDS>;
+
 export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
+export type RecordError<FIELDS> =
+  (field: keyof FIELDS | string, msg: string, exclusive?: boolean) => void;
+export type ClearErrors<FIELDS> =
+  (field: keyof FIELDS | string, msg: string) => void;
+/**
+ * A funtion that is called to indicate a delayed validation has happend.
+ */
+export type DelayedValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorder: RecordError<FIELDS>) => void;
+export type ValidateDelayed<FIELDS> = ((field: keyof FIELDS | string, promise: Promise<DelayedValidatorFunction<FIELDS>>) => void);
 
 export type ValidateFn<FIELDS> = (
   newValues: Partial<FIELDS>,
   isVisited: (fieldName: keyof FIELDS | string) => boolean,
-  recordError: (field: keyof FIELDS | string, msg: string) => void
+  recordError: RecordError<FIELDS>,
+  validateDelayed: ValidateDelayed<FIELDS>
 ) => void;
-
 //
 // useFormHook ########################################################################
 //
+
+interface State<FIELDS> {
+  values: Fields<FIELDS>;
+  submitted: boolean;
+  fieldsVisited: FieldsVisited<FIELDS>;
+  errors: FormErrors<FIELDS>
+}
 
 export function useForm<FIELDS>(
   validate: ValidateFn<FIELDS>,
@@ -40,24 +89,27 @@ export function useForm<FIELDS>(
   submit: () => void,
   valueCreators: ValueCreators<FIELDS> = {}
 ): [OverallState<FIELDS>, FormInputFieldPropsProducer<any>] {
-  let [values, setValues] = useState(fields);
-  let [submitted, setSubmitted] = useState(false);
-  let [fieldsVisited, setFieldsVisited] = useState({} as FieldsVisited<FIELDS>);
-  let [errors, setErrors] = useState({} as FormErrors<FIELDS>);
+  const [state, setState] = useState({ values: fields, submitted: false, fieldsVisited: {}, errors: {} } as State<FIELDS>);;
+  let { values, submitted, fieldsVisited, errors } = state;
+  const setValues = (v: Fields<FIELDS>) => setState({ ...state, values: v });
+  const setSubmitted = (v: boolean) => setState({ ...state, submitted: v });
+  const setFieldsVisited = (v: FieldsVisited<FIELDS>) => setState({ ...state, fieldsVisited: v });
+  const setErrors = (v: FormErrors<FIELDS>) => setState({ ...state, errors: v });
 
   //
   // validation ##############################################################
   // 
-  const doValidation = (newValues: Partial<FIELDS>, allFields: boolean = submitted) => {
+  const doValidation: DoValidation<FIELDS> = (newValues: Partial<FIELDS>, allFields: boolean = submitted) => {
     const newErrors: FormErrors<FIELDS> = {};
     validate(
       newValues,
       fieldName => (fieldsVisited[fieldName] === true) || (allFields === true),
-      errorRecorder(newErrors)
+      createErrorRecorder(newErrors),
+      createValidateDelayed(newErrors, setState, validate)
     );
+    setErrors(newErrors);
     console.log('newErrors ', newErrors);
     errors = newErrors;
-    setErrors(errors);
     return newErrors;
   }
 
@@ -83,7 +135,7 @@ export function useForm<FIELDS>(
     setFieldVisited(currentTarget.name);
   }
 
-  function setFieldVisited(fieldName:string) {
+  function setFieldVisited(fieldName: string) {
     const newFieldsVisited = {
       // https://stackoverflow.com/a/51193091/6134498
       ...(fieldsVisited as any),
@@ -165,9 +217,9 @@ export function useForm<FIELDS>(
   // Construction of return value
   //
 
- // Der FormInputFieldProducer könnte auch noch minimalkonfiguration nehmen, z.B. Multi oder nicht, bzw. HTMLInputField oder eigenes.
+  // Der FormInputFieldProducer könnte auch noch minimalkonfiguration nehmen, z.B. Multi oder nicht, bzw. HTMLInputField oder eigenes.
 
- // komplett auf Pfade umstellen sodass es keinen unterschied mehr macht aus welcher tiefe man setValue aufruft.
+  // komplett auf Pfade umstellen sodass es keinen unterschied mehr macht aus welcher tiefe man setValue aufruft.
 
   function createIndividualFields<T>(fieldName: [keyof FIELDS] | string): FormFieldInput {
     const fieldKey = fieldName as keyof FIELDS;
@@ -236,3 +288,15 @@ export interface SubEditorProps<T> {
 export type FormInputFieldPropsProducer<T> =
   (key: keyof T) => FormFieldInput;
 
+
+/*function ACompoent() {
+  const [state, setState] = useState({wert: 0, ungerade: false});
+  const handleClick = () => { 
+    setState({...state, wert: state.wert+1});
+    if (state.wert === )
+    window.setTimeout(()=> {setState({...state, ungerade: state.wert %2 !== 0})});
+  }
+
+  return <button onClick={handleClick} />
+
+}*/
