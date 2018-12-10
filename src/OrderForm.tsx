@@ -22,7 +22,8 @@ interface Pizza {
   groesse: number;
   belaege: string[];
 }
-
+const plzCache:string[] = [];
+const invalidPlzCache:string[] = [];
 // validatePizzaForm jetzt "kontextlos", dh zum Beispiel von außen testbar
 const validatePizzaForm: ValidateFn<OrderFormState> = function (
   newFormInput,
@@ -30,7 +31,6 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   recordError: RecordError<OrderFormState>,
   validateDelayed: ValidateDelayed<OrderFormState>
 ) {
-
   if (isVisited("vorname") && newFormInput.vorname.length < 3) {
     recordError("vorname", "Der Vorname muss mindestens 3 Zeichen lang sein");
   }
@@ -45,11 +45,16 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     }
   }
 
-  if (isVisited('plz')) {
+  if (isVisited('plz') && invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
+    recordError("plz", "Postleitzahl nicht im Liefergebiet", true);
+  } else if (isVisited('plz') && plzCache.indexOf(newFormInput.plz) === -1) {
     const validation: DelayedValidatorFunction<OrderFormState> = (currentValue, errorRecorder) => {
       if (currentValue.plz === newFormInput.plz) {
         if (['22305', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
           errorRecorder("plz", "Postleitzahl nicht im Liefergebiet", true);
+          invalidPlzCache.push(newFormInput.plz);
+        } else {
+          plzCache.push(newFormInput.plz);
         }
       }
     }
@@ -85,6 +90,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     }
 
     const [overallFormState, propsFor] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
+    
     return (
       <div className="Form">
         <Input label="Vorname" {...propsFor('vorname')} />
@@ -139,7 +145,6 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   }
   const alleBelaege = ["Oliven", "Feta", "Zwiebeln", "Mais", "Pilze"];
   function BelagEditor(props: CustomEditorProps<string[]>) {
-    console.log('BElagEditorProps ', props);
     const remove = (idx:number) => { 
       return props.value.filter( (d,i) => i!==idx);
     }

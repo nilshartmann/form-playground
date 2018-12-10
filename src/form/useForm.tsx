@@ -1,5 +1,5 @@
 import { useState } from "react";
-
+import {setValueOnObject,getValueFromObject} from './helpers'
 
 
 //
@@ -55,6 +55,8 @@ type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
 type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
 type DoValidation<FIELDS> = (newValues: Partial<FIELDS>, allFields?: boolean, initialErros?: FormErrors<FIELDS>) => FormErrors<FIELDS>;
 
+type Path = string;
+
 export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
 export type RecordError<FIELDS> =
   (field: keyof FIELDS | string, msg: string, exclusive?: boolean) => void;
@@ -83,6 +85,13 @@ interface State<FIELDS> {
   errors: FormErrors<FIELDS>
 }
 
+function setStateSave<FIELDS>( field: keyof State<FIELDS>, value: any): (x:State<FIELDS>) => State<FIELDS> {
+  return (s: State<FIELDS>) => {
+    s[field] = value;
+    return s;
+  }
+}
+
 export function useForm<FIELDS>(
   validate: ValidateFn<FIELDS>,
   fields: Fields<FIELDS>,
@@ -91,11 +100,10 @@ export function useForm<FIELDS>(
 ): [OverallState<FIELDS>, FormInputFieldPropsProducer<any>] {
   const [state, setState] = useState({ values: fields, submitted: false, fieldsVisited: {}, errors: {} } as State<FIELDS>);;
   let { values, submitted, fieldsVisited, errors } = state;
-  const setValues = (v: Fields<FIELDS>) => setState({ ...state, values: v });
-  const setSubmitted = (v: boolean) => setState({ ...state, submitted: v });
-  const setFieldsVisited = (v: FieldsVisited<FIELDS>) => setState({ ...state, fieldsVisited: v });
-  const setErrors = (v: FormErrors<FIELDS>) => setState({ ...state, errors: v });
-
+  const setValues = (v: Fields<FIELDS>) => setState(setStateSave('values', v));
+  const setSubmitted = (v: boolean) => setState(setStateSave('submitted', v));
+  const setFieldsVisited = (v: FieldsVisited<FIELDS>) => setState(setStateSave('fieldsVisited', v));
+  const setErrors = (v: FormErrors<FIELDS>) => setState(setStateSave('errors', v ));
   //
   // validation ##############################################################
   // 
@@ -108,8 +116,6 @@ export function useForm<FIELDS>(
       createValidateDelayed(newErrors, setState, validate)
     );
     setErrors(newErrors);
-    console.log('newErrors ', newErrors);
-    errors = newErrors;
     return newErrors;
   }
 
@@ -121,14 +127,13 @@ export function useForm<FIELDS>(
     setValue(currentTarget.name as keyof FIELDS, currentTarget.value);
   }
 
-  const setValue = (field: keyof FIELDS, newValue: any) => {
-    const newValues = Object.assign({}, values, {
-      [field]: newValue
-    });
+  const setValue = (path: Path | keyof FIELDS, newValue: any) => {
+    console.log(`setting value for ${path} to `, newValue);
+    const newValues = Object.assign({}, values);
+    setValueOnObject(path as string, newValues, newValue);
     doValidation(newValues);
     values = newValues;
     setValues(values);
-    console.log(`setting value for ${field} to `, newValue);
   }
 
   function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>): void {
@@ -143,7 +148,6 @@ export function useForm<FIELDS>(
     } as FieldsVisited<FIELDS>;
     fieldsVisited = newFieldsVisited;
     doValidation(values);
-    console.log('newieldsVisited ', newFieldsVisited);
     setFieldsVisited(newFieldsVisited);
 
   }
@@ -164,29 +168,24 @@ export function useForm<FIELDS>(
   //
 
 
-  const onMultiFieldRemove = (field: keyof FIELDS, idx: number) => {
-    let newArray = (values[field] as []).filter((e, myIdx) => idx !== myIdx);
-    setValue(field, newArray);
+  const onMultiFieldRemove = (path: Path, idx: number) => {
+    let newArray = (getValueFromObject(path, values) as []).filter((e, myIdx) => idx !== myIdx);
+    setValue(path, newArray);
   }
   //onMultiFieldChange: (pi: Pizza, idx: number) => void;
-  const onMultiAdd = (field: keyof FIELDS) => {
-    const initial: any[] = values[field] as any[];
-    const valueCreator: (() => object) | undefined = valueCreators[field];
+  const onMultiAdd = (path: Path) => {
+    const initial: any[] = getValueFromObject(path, values) as any[];
+    // TODO das wird noch interessant.....
+    const valueCreator: (() => object) | undefined = getValueFromObject(path,valueCreators);
     if (valueCreator) {
       const newArray = [...(initial)];
       newArray.push(valueCreator());
-      setValue(field, newArray);
+      setValue(path, newArray);
     } else {
-      console.error(`No valueCreator for ${field} was supplied. 
+      console.error(`No valueCreator for ${path} was supplied. 
       Adding values is impossible. To change this supply 
-      an object with a valueCreator for ${field} to useForm`);
+      an object with a valueCreator for ${path} to useForm`);
     }
-  }
-  const onMultiValueUpdate = (field: keyof FIELDS, idx: number, newValue: any) => {
-    console.log('new value ', newValue);
-    const newArray = (values[field] as any[]);
-    newArray[idx] = newValue;
-    setValue(field, newArray);
   }
 
   //
@@ -196,22 +195,8 @@ export function useForm<FIELDS>(
   function subEditorProps<T>(parentFieldName: any, value: T, idx: number): SubEditorProps<T> {
     return {
       inputProps: function (childFieldName: keyof T): FormFieldInput {
-        const valueChanged = (e: any) => {
-          const newValue = { ...value as any };
-          newValue[childFieldName as any] = e;
-          onMultiValueUpdate(parentFieldName, idx, newValue);
-        };
-        const fieldPath = `${parentFieldName}[${idx}].${childFieldName}`;
-        const onBlur = () => setFieldVisited(fieldPath);
-        return {
-          errorMessages: errors[fieldPath],
-          name: childFieldName as string,
-          onBlur: onBlur,
-          onChange: (e:React.ChangeEvent<HTMLInputElement>) => valueChanged(e.target.value),
-          value: (value as any)[childFieldName],
-          onValueChange: valueChanged,
-          onBlurChange: onBlur
-        }
+        const path: Path = `${parentFieldName}[${idx}].${childFieldName}`
+        return createIndividualFields(path);
       }
     }
   }
@@ -220,30 +205,30 @@ export function useForm<FIELDS>(
   // Construction of return value
   //
 
-  // Der FormInputFieldProducer könnte auch noch minimalkonfiguration nehmen, z.B. Multi oder nicht, bzw. HTMLInputField oder eigenes.
 
-  // komplett auf Pfade umstellen sodass es keinen unterschied mehr macht aus welcher tiefe man setValue aufruft.
+  // 
+  function createIndividualFields<T>(fieldName: [keyof FIELDS] | Path): FormFieldInput {
+    const path = fieldName as Path;
+    const value = getValueFromObject(path , values);
+    const isArray = value instanceof Array;
+    const newErrors= errors[path];
 
-  function createIndividualFields<T>(fieldName: [keyof FIELDS] | string): FormFieldInput {
-    const fieldKey = fieldName as keyof FIELDS;
-    const isArray = fields[fieldKey] as any instanceof Array;
     const ret: FormFieldInput = {
       // @ts-ignore
-      value: values[fieldName],
+      value: value,
       // @ts-ignore
-      errorMessages: errors[fieldName],
+      errorMessages: newErrors,
       name: fieldName as string,
       onChange: updateValues,
       onBlur: updateVisitedFields,
-      onValueChange: (newValue: any) => setValue(fieldKey, newValue),
-      onBlurChange: () => setFieldVisited(fieldKey as string)
+      onValueChange: (newValue: any) => setValue(path, newValue),
+      onBlurChange: () => setFieldVisited(path as string)
     };
 
     if (isArray) {
-      console.log('multiEditor value ', values)
       const rv = ret as any;
-      rv['onRemove'] = (idx: number) => onMultiFieldRemove(fieldKey, idx);
-      rv['onAdd'] = () => onMultiAdd(fieldKey);
+      rv['onRemove'] = (idx: number) => onMultiFieldRemove(path, idx);
+      rv['onAdd'] = () => onMultiAdd(path);
       rv['subEditorProps'] = (newValue: any, idx: number) => subEditorProps(fieldName, newValue, idx);
 
     }
@@ -307,18 +292,4 @@ export interface SubEditorProps<T> {
 export type FormInputFieldPropsProducer<T> =
   (key: keyof T) => FormFieldInput;
 
-export enum FieldType {
-  SINGLE, MULTI, CUSTOM 
-}
   
-/*function ACompoent() {
-  const [state, setState] = useState({wert: 0, ungerade: false});
-  const handleClick = () => { 
-    setState({...state, wert: state.wert+1});
-    if (state.wert === )
-    window.setTimeout(()=> {setState({...state, ungerade: state.wert %2 !== 0})});
-  }
-
-  return <button onClick={handleClick} />
-
-}*/
