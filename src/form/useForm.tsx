@@ -5,7 +5,12 @@ import {setValueOnObject,getValueFromObject} from './helpers'
 //
 // Validation Helpers ###########################################################
 //
-function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>) {
+/**
+ * A function that creates the RecordError helper function.
+ * 
+ * @param errors the objects where the errors should be recorded in
+ */
+function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>):RecordError<FIELDS> {
   return function (field: keyof FIELDS | string, msg: string, exclusive: boolean = false) {
     //TODO Why is that:
     //[ts] Type 'string | keyof FIELDS' cannot be used to index type 'string | FormErrors<FIELDS>'. [2536]
@@ -20,32 +25,46 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>) {
     }
   };
 }
-function createValidateDelayed<FIELDS>(newErrors: FormErrors<FIELDS>, setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
+/**
+ * 
+ * Computes the new state of the Form after an async validation.
+ * 
+ * @param validate the form's validator function
+ * @param newState the current state of the form
+ * @param asyncVF an async validator function
+ */
+function getNewStateAfterAsyncValidation<FIELDS>(
+  validate: ValidateFn<FIELDS>,
+  newState: State<FIELDS>, 
+  asyncVF: AsyncValidatorFunction<FIELDS>): State<FIELDS> {
+  const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
+  const errorRecorder = createErrorRecorder(newErrors);
+  // first validate the on async field
+  asyncVF(newState.values, errorRecorder);
+  // then validate anything else...
+  validate(newState.values,
+    fieldName => (newState.fieldsVisited[fieldName] === true),
+    errorRecorder,
+    // ...omitting anything that should be validated delayed
+    DontValidateAnythingDelayed
+  );
+  return { ...newState, errors: newErrors }
+}
+
+/**
+ * Creator function for the ValidateAsync helper function.
+ */
+function createValidateDelayed<FIELDS>(
+  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
   validate: ValidateFn<FIELDS>
-): ValidateDelayed<FIELDS> {
-  const validateDelayed: ValidateDelayed<FIELDS> = function (field: keyof FIELDS | string, promise: Promise<DelayedValidatorFunction<FIELDS>>) {
-    newErrors[field] = undefined;
-    function updateState(newState: State<FIELDS>, dvf: DelayedValidatorFunction<FIELDS>): State<FIELDS> {
-      const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
-      const errorRecorder = createErrorRecorder(newErrors);
-      // first validate the on async field
-      dvf(newState.values, errorRecorder);
-      // then validate anything else...
-      validate(newState.values,
-        fieldName => (newState.fieldsVisited[fieldName] === true),
-        errorRecorder,
-        // ...omitting anything that should be validated delayed
-        DontValidateAnythingDelayed
-      );
-      return { ...newState, errors: newErrors }
-    }
-    // etState: 
-    promise.then((dvf: DelayedValidatorFunction<FIELDS>) => setState((newState) => updateState(newState, dvf)));
+): ValidateAsync<FIELDS> {
+  const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>) {
+    promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, newState, dvf)));
   }
-  return validateDelayed;
+  return validateAsyncFunction;
 
 }
-const DontValidateAnythingDelayed: ValidateDelayed<any> = (f, p) => { };
+const DontValidateAnythingDelayed: ValidateAsync<any> = (p) => { };
 
 
 type Fields<FIELDS> = { [P in keyof FIELDS]: any };
@@ -53,26 +72,48 @@ type Partial<T> = { [P in keyof T]: T[P] };
 
 type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
 type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
-type DoValidation<FIELDS> = (newValues: Partial<FIELDS>, allFields?: boolean, initialErros?: FormErrors<FIELDS>) => FormErrors<FIELDS>;
 
 type Path = string;
 
+/**
+ * Each complex element that is used in an array within the form's data model, must be created by a ValueCreator function,
+ * which must be registered in here.
+ */
 export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
+/**
+ * A funtion that 'records' an error.
+ * @param field to which field does the error belong?
+ * @param message the error message to be recorded
+ * @param exclusive if true any other previously recorded errors will be overwritten
+ * 
+ */
 export type RecordError<FIELDS> =
   (field: keyof FIELDS | string, msg: string, exclusive?: boolean) => void;
-export type ClearErrors<FIELDS> =
-  (field: keyof FIELDS | string, msg: string) => void;
-/**
- * A funtion that is called to indicate a delayed validation has happend.
- */
-export type DelayedValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorder: RecordError<FIELDS>) => void;
-export type ValidateDelayed<FIELDS> = ((field: keyof FIELDS | string, promise: Promise<DelayedValidatorFunction<FIELDS>>) => void);
 
+  /**
+ * A function that is called after an asynchronous validation took place. An error recorder and the current value
+ * of the validated field is being passed to the function, as the value could have changed while validation was 
+ * in progress. Set the error, if after waiting for the async validation, the field is still invalid, in here.
+ */
+export type AsyncValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorder: RecordError<FIELDS>) => void;
+/**
+ * Registers a promise for an async validation. When the promis resolves the supplies AsyncValidatorFunction is called.
+ */
+export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIELDS>>) => void;
+
+/**
+ * A validator function validates all the forms values.
+ * 
+ * @param newValues the current form's values
+ * @param isVisited a function to check if the field was visited
+ * @param recordError an ErrorRecorder to record the errors
+ * @param validateDelayed a function to register a delayed validator
+ */
 export type ValidateFn<FIELDS> = (
   newValues: Partial<FIELDS>,
   isVisited: (fieldName: keyof FIELDS | string) => boolean,
   recordError: RecordError<FIELDS>,
-  validateDelayed: ValidateDelayed<FIELDS>
+  validateDelayed: ValidateAsync<FIELDS>
 ) => void;
 //
 // useFormHook ########################################################################
@@ -92,6 +133,14 @@ function setStateSave<FIELDS>( field: keyof State<FIELDS>, value: any): (x:State
   }
 }
 
+/**
+ * Creates everything that's reuqired for building a form.
+ * 
+ * @param validate a validator function for your form
+ * @param fields the initial value of the form
+ * @param submit the function to be executed on submit if the form state is valid
+ * @param valueCreators an object which contains creator functions for array based fields
+ */
 export function useForm<FIELDS>(
   validate: ValidateFn<FIELDS>,
   fields: Fields<FIELDS>,
@@ -107,13 +156,13 @@ export function useForm<FIELDS>(
   //
   // validation ##############################################################
   // 
-  const doValidation: DoValidation<FIELDS> = (newValues: Partial<FIELDS>, allFields: boolean = submitted) => {
+  const doValidation = (newValues: Partial<FIELDS>, allFields: boolean = submitted) => {
     const newErrors: FormErrors<FIELDS> = {};
     validate(
       newValues,
       fieldName => (fieldsVisited[fieldName] === true) || (allFields === true),
       createErrorRecorder(newErrors),
-      createValidateDelayed(newErrors, setState, validate)
+      createValidateDelayed(setState, validate)
     );
     setErrors(newErrors);
     return newErrors;
@@ -123,12 +172,20 @@ export function useForm<FIELDS>(
   // update values etc. ##############################################################
   // 
 
+  /**
+   * Helper to update field values from ChangeEvents.
+   * @param param a change Event
+   */
   function updateValues({ currentTarget }: React.ChangeEvent<HTMLInputElement>): void {
     setValue(currentTarget.name as keyof FIELDS, currentTarget.value);
   }
 
+  /**
+   * sets newValue under path and validates the form afterwards.
+   * @param path the path on which the value should be set
+   * @param newValue the new value
+   */
   const setValue = (path: Path | keyof FIELDS, newValue: any) => {
-    console.log(`setting value for ${path} to `, newValue);
     const newValues = Object.assign({}, values);
     setValueOnObject(path as string, newValues, newValue);
     doValidation(newValues);
@@ -136,6 +193,10 @@ export function useForm<FIELDS>(
     setValues(values);
   }
 
+  /**
+   * Helper to update the list of visited fields after a BlurEvents.
+   * @param param a blur Event
+   */
   function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>): void {
     setFieldVisited(currentTarget.name);
   }
@@ -259,7 +320,9 @@ type HTMLInputEventEmitter =(e: React.ChangeEvent<HTMLInputElement>) => void;
 type HTMLFocusEventEmitter =(e: React.FocusEvent<HTMLInputElement>) => void;
 type InputEventEmitter =(newValue: any) => void;
 type FocusEventEmitter =() => void;
-
+/**
+ * Properties for HTMLInputFields.
+ */
 export interface FormFieldInput {
   value: any;
   errorMessages: any;
@@ -270,13 +333,18 @@ export interface FormFieldInput {
   onBlurChange: FocusEventEmitter
 };
 
+/**
+ * Props for custom editors for any values other than primitive types such as boolean, string or number.
+ */
 export interface CustomEditorProps<T> {
   value: T;
   errorMessages: any;
   onValueChange: InputEventEmitter;
   onBlurChange: FocusEventEmitter
 }
-
+/**
+ * Properties for editors for array based fields
+ */
 export interface MultiFormInput<T> extends FormFieldInput {
   onValueUpdate: (pi: T, idx: number) => void;
   onRemove: (idx: number) => void;

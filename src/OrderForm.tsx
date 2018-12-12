@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Input } from "./form/Input";
 
 // Form Logic
-import { ValidateFn, useForm, ValueCreators, MultiFormInput, SubEditorProps, RecordError, ValidateDelayed, DelayedValidatorFunction, CustomEditorProps } from "./form/useForm";
+import { ValidateFn, useForm, ValueCreators, MultiFormInput, SubEditorProps, RecordError, ValidateAsync, AsyncValidatorFunction, CustomEditorProps } from "./form/useForm";
 
 interface Drink {
   name: string;
@@ -29,7 +29,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   newFormInput,
   isVisited,
   recordError: RecordError<OrderFormState>,
-  validateDelayed: ValidateDelayed<OrderFormState>
+  validateDelayed: ValidateAsync<OrderFormState>
 ) {
   if (isVisited("vorname") && newFormInput.vorname.length < 3) {
     recordError("vorname", "Der Vorname muss mindestens 3 Zeichen lang sein");
@@ -48,7 +48,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   if (isVisited('plz') && invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
     recordError("plz", "Postleitzahl nicht im Liefergebiet", true);
   } else if (isVisited('plz') && plzCache.indexOf(newFormInput.plz) === -1) {
-    const validation: DelayedValidatorFunction<OrderFormState> = (currentValue, errorRecorder) => {
+    const validation: AsyncValidatorFunction<OrderFormState> = (currentValue, errorRecorder) => {
       if (currentValue.plz === newFormInput.plz) {
         if (['22305', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
           errorRecorder("plz", "Postleitzahl nicht im Liefergebiet", true);
@@ -58,7 +58,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
         }
       }
     }
-    validateDelayed('plz', new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)));
+    validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)));
   }
 
 
@@ -143,6 +143,9 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
       )}      
       </div>
   }
+
+
+
   const alleBelaege = ["Oliven", "Feta", "Zwiebeln", "Mais", "Pilze"];
   function BelagEditor(props: CustomEditorProps<string[]>) {
     const remove = (idx:number) => { 
