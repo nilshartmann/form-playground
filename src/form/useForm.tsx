@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {setValueOnObject,getValueFromObject} from './helpers'
+import { stat } from "fs";
 
 
 //
@@ -36,11 +37,19 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>):RecordError<FIE
 function getNewStateAfterAsyncValidation<FIELDS>(
   validate: ValidateFn<FIELDS>,
   newState: State<FIELDS>, 
-  asyncVF: AsyncValidatorFunction<FIELDS>): State<FIELDS> {
+  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
+  asyncVF: AsyncValidatorFunction<FIELDS>,
+  path?:Path): State<FIELDS> {
   const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
   const errorRecorder = createErrorRecorder(newErrors);
   // first validate the on async field
   asyncVF(newState.values, errorRecorder);
+  const validating = {...(newState.validating as any)}
+  if (path) {
+    //@ts-ignore (why could validating[path] be undefined)     
+    validating[path]--;
+  }
+  
   // then validate anything else...
   validate(newState.values,
     fieldName => (newState.fieldsVisited[fieldName] === true),
@@ -48,18 +57,31 @@ function getNewStateAfterAsyncValidation<FIELDS>(
     // ...omitting anything that should be validated delayed
     DontValidateAnythingDelayed
   );
-  return { ...newState, errors: newErrors }
+  console.log('newState ', newState);
+  return { ...newState, errors: newErrors, validating: validating}
 }
 
 /**
  * Creator function for the ValidateAsync helper function.
  */
 function createValidateDelayed<FIELDS>(
+  state: State<FIELDS>,
   setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
   validate: ValidateFn<FIELDS>
 ): ValidateAsync<FIELDS> {
-  const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>) {
-    promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, newState, dvf)));
+  
+  const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>, path?:Path) {
+    const validating = {...(state.validating as any)}
+    if (path) {
+      if (state.validating[path]!==undefined) {
+        //@ts-ignore (why could validating[path] be undefined)     
+        state.validating[path]++;
+      } else {
+        state.validating[path] = 1;
+      }
+    }
+      
+    promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, newState, setState, dvf, path)));
   }
   return validateAsyncFunction;
 
@@ -71,6 +93,7 @@ type Fields<FIELDS> = { [P in keyof FIELDS]: any };
 type Partial<T> = { [P in keyof T]: T[P] };
 
 type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
+type Validating<FIELDS> = { [P in keyof FIELDS | string]?: number };
 type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
 
 type Path = string;
@@ -99,7 +122,7 @@ export type AsyncValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorde
 /**
  * Registers a promise for an async validation. When the promis resolves the supplies AsyncValidatorFunction is called.
  */
-export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIELDS>>) => void;
+export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIELDS>>, fieldname?:Path) => void;
 
 /**
  * A validator function validates all the forms values.
@@ -123,7 +146,8 @@ interface State<FIELDS> {
   values: Fields<FIELDS>;
   submitted: boolean;
   fieldsVisited: FieldsVisited<FIELDS>;
-  errors: FormErrors<FIELDS>
+  errors: FormErrors<FIELDS>,
+  validating: Validating<FIELDS>
 }
 
 function setStateSave<FIELDS>( field: keyof State<FIELDS>, value: any): (x:State<FIELDS>) => State<FIELDS> {
@@ -134,35 +158,36 @@ function setStateSave<FIELDS>( field: keyof State<FIELDS>, value: any): (x:State
 }
 
 /**
- * Creates everything that's reuqired for building a form.
+ * A hook that creates everything that's required for building a form.
  * 
  * @param validate a validator function for your form
  * @param fields the initial value of the form
  * @param submit the function to be executed on submit if the form state is valid
- * @param valueCreators an object which contains creator functions for array based fields
+ * @param valueCreators an (optional) object which contains creator functions for array based fields
  */
-export function useForm<FIELDS>(
-  validate: ValidateFn<FIELDS>,
-  fields: Fields<FIELDS>,
+export function useForm<FORM_DATA>(
+  validate: ValidateFn<FORM_DATA>,
+  fields: Fields<FORM_DATA>,
   submit: () => void,
-  valueCreators: ValueCreators<FIELDS> = {}
-): [OverallState<FIELDS>, FormInputFieldPropsProducer<any>] {
-  const [state, setState] = useState({ values: fields, submitted: false, fieldsVisited: {}, errors: {} } as State<FIELDS>);;
+  valueCreators: ValueCreators<FORM_DATA> = {}
+): [OverallState<FORM_DATA>, FormInputFieldPropsProducer<any>] {
+  const [state, setState] = useState({ values: fields, submitted: false, fieldsVisited: {}, errors: {}, validating: {} } as State<FORM_DATA>);;
   let { values, submitted, fieldsVisited, errors } = state;
-  const setValues = (v: Fields<FIELDS>) => setState(setStateSave('values', v));
+  const setValues = (v: Fields<FORM_DATA>) => setState(setStateSave('values', v));
   const setSubmitted = (v: boolean) => setState(setStateSave('submitted', v));
-  const setFieldsVisited = (v: FieldsVisited<FIELDS>) => setState(setStateSave('fieldsVisited', v));
-  const setErrors = (v: FormErrors<FIELDS>) => setState(setStateSave('errors', v ));
+  const setFieldsVisited = (v: FieldsVisited<FORM_DATA>) => setState(setStateSave('fieldsVisited', v));
+  const setErrors = (v: FormErrors<FORM_DATA>) => setState(setStateSave('errors', v ));
+  console.log('this.state.validating  ', state.validating);
   //
   // validation ##############################################################
   // 
-  const doValidation = (newValues: Partial<FIELDS>, allFields: boolean = submitted) => {
-    const newErrors: FormErrors<FIELDS> = {};
+  const doValidation = (newValues: Partial<FORM_DATA>, allFields: boolean = submitted) => {
+    const newErrors: FormErrors<FORM_DATA> = {};
     validate(
       newValues,
       fieldName => (fieldsVisited[fieldName] === true) || (allFields === true),
       createErrorRecorder(newErrors),
-      createValidateDelayed(setState, validate)
+      createValidateDelayed(state, setState, validate)
     );
     setErrors(newErrors);
     return newErrors;
@@ -177,7 +202,7 @@ export function useForm<FIELDS>(
    * @param param a change Event
    */
   function updateValues({ currentTarget }: React.ChangeEvent<HTMLInputElement>): void {
-    setValue(currentTarget.name as keyof FIELDS, currentTarget.value);
+    setValue(currentTarget.name as keyof FORM_DATA, currentTarget.value);
   }
 
   /**
@@ -185,7 +210,7 @@ export function useForm<FIELDS>(
    * @param path the path on which the value should be set
    * @param newValue the new value
    */
-  const setValue = (path: Path | keyof FIELDS, newValue: any) => {
+  const setValue = (path: Path | keyof FORM_DATA, newValue: any) => {
     const newValues = Object.assign({}, values);
     setValueOnObject(path as string, newValues, newValue);
     doValidation(newValues);
@@ -206,7 +231,7 @@ export function useForm<FIELDS>(
       // https://stackoverflow.com/a/51193091/6134498
       ...(fieldsVisited as any),
       [fieldName]: true
-    } as FieldsVisited<FIELDS>;
+    } as FieldsVisited<FORM_DATA>;
     fieldsVisited = newFieldsVisited;
     doValidation(values);
     setFieldsVisited(newFieldsVisited);
@@ -268,7 +293,7 @@ export function useForm<FIELDS>(
 
 
   // 
-  function createIndividualFields<T>(fieldName: [keyof FIELDS] | Path): FormFieldInput {
+  function createIndividualFields(fieldName: [keyof FORM_DATA] | Path): FormFieldInput {
     const path = fieldName as Path;
     const value = getValueFromObject(path , values);
     const isArray = value instanceof Array;
@@ -283,7 +308,9 @@ export function useForm<FIELDS>(
       onChange: updateValues,
       onBlur: updateVisitedFields,
       onValueChange: (newValue: any) => setValue(path, newValue),
-      onBlurChange: () => setFieldVisited(path as string)
+      onBlurChange: () => setFieldVisited(path as string),
+      //@ts-ignore (how could state.validating[path] be undefined here?)
+      validating: state.validating[path] !== undefined && state.validating[path] > 0
     };
 
     if (isArray) {
@@ -307,7 +334,7 @@ export function useForm<FIELDS>(
 
     },
     createIndividualFields
-  ] as [OverallState<FIELDS>, FormInputFieldPropsProducer<any>];
+  ] as [OverallState<FORM_DATA>, FormInputFieldPropsProducer<any>];
 }
 
 type OverallState<FIELDS> = {
@@ -330,7 +357,8 @@ export interface FormFieldInput {
   onChange: HTMLInputEventEmitter ;
   onBlur: HTMLFocusEventEmitter ;
   onValueChange: InputEventEmitter;
-  onBlurChange: FocusEventEmitter
+  onBlurChange: FocusEventEmitter,
+  validating: boolean
 };
 
 /**

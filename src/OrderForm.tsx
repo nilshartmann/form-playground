@@ -58,7 +58,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
         }
       }
     }
-    validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)));
+    validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)), 'plz');
   }
 
 
