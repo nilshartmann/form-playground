@@ -1,5 +1,5 @@
 import { useState } from "react";
-import {setValueOnObject,getValueFromObject} from './helpers'
+import { setValueOnObject, getValueFromObject } from './helpers'
 import { stat } from "fs";
 
 
@@ -11,7 +11,7 @@ import { stat } from "fs";
  * 
  * @param errors the objects where the errors should be recorded in
  */
-function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>):RecordError<FIELDS> {
+function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FIELDS> {
   return function (field: keyof FIELDS | string, msg: string, exclusive: boolean = false) {
     //TODO Why is that:
     //[ts] Type 'string | keyof FIELDS' cannot be used to index type 'string | FormErrors<FIELDS>'. [2536]
@@ -36,20 +36,20 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>):RecordError<FIE
  */
 function getNewStateAfterAsyncValidation<FIELDS>(
   validate: ValidateFn<FIELDS>,
-  newState: State<FIELDS>, 
+  newState: State<FIELDS>,
   setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
   asyncVF: AsyncValidatorFunction<FIELDS>,
-  path?:Path): State<FIELDS> {
+  path?: Path): State<FIELDS> {
   const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
   const errorRecorder = createErrorRecorder(newErrors);
   // first validate the on async field
   asyncVF(newState.values, errorRecorder);
-  const validating = {...(newState.validating as any)}
+  const validating = { ...(newState.validating as any) }
   if (path) {
     //@ts-ignore (why could validating[path] be undefined)     
     validating[path]--;
   }
-  
+
   // then validate anything else...
   validate(newState.values,
     fieldName => (newState.fieldsVisited[fieldName] === true),
@@ -58,7 +58,7 @@ function getNewStateAfterAsyncValidation<FIELDS>(
     DontValidateAnythingDelayed
   );
   console.log('newState ', newState);
-  return { ...newState, errors: newErrors, validating: validating}
+  return { ...newState, errors: newErrors, validating: validating }
 }
 
 /**
@@ -69,18 +69,18 @@ function createValidateDelayed<FIELDS>(
   setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
   validate: ValidateFn<FIELDS>
 ): ValidateAsync<FIELDS> {
-  
-  const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>, path?:Path) {
-    const validating = {...(state.validating as any)}
+
+  const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>, path?: Path) {
+    const validating = { ...(state.validating as any) }
     if (path) {
-      if (state.validating[path]!==undefined) {
+      if (state.validating[path] !== undefined) {
         //@ts-ignore (why could validating[path] be undefined)     
         state.validating[path]++;
       } else {
         state.validating[path] = 1;
       }
     }
-      
+
     promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, newState, setState, dvf, path)));
   }
   return validateAsyncFunction;
@@ -103,6 +103,7 @@ type Path = string;
  * which must be registered in here.
  */
 export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
+
 /**
  * A funtion that 'records' an error.
  * @param field to which field does the error belong?
@@ -113,16 +114,16 @@ export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
 export type RecordError<FIELDS> =
   (field: keyof FIELDS | string, msg: string, exclusive?: boolean) => void;
 
-  /**
- * A function that is called after an asynchronous validation took place. An error recorder and the current value
- * of the validated field is being passed to the function, as the value could have changed while validation was 
- * in progress. Set the error, if after waiting for the async validation, the field is still invalid, in here.
- */
+/**
+* A function that is called after an asynchronous validation took place. An error recorder and the current value
+* of the validated field is being passed to the function, as the value could have changed while validation was 
+* in progress. Set the error, if after waiting for the async validation, the field is still invalid, in here.
+*/
 export type AsyncValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorder: RecordError<FIELDS>) => void;
 /**
  * Registers a promise for an async validation. When the promis resolves the supplies AsyncValidatorFunction is called.
  */
-export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIELDS>>, fieldname?:Path) => void;
+export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIELDS>>, fieldname?: Path) => void;
 
 /**
  * A validator function validates all the forms values.
@@ -150,7 +151,7 @@ interface State<FIELDS> {
   validating: Validating<FIELDS>
 }
 
-function setStateSave<FIELDS>( field: keyof State<FIELDS>, value: any): (x:State<FIELDS>) => State<FIELDS> {
+function setStateSave<FIELDS>(field: keyof State<FIELDS>, value: any): (x: State<FIELDS>) => State<FIELDS> {
   return (s: State<FIELDS>) => {
     s[field] = value;
     return s;
@@ -176,7 +177,7 @@ export function useForm<FORM_DATA>(
   const setValues = (v: Fields<FORM_DATA>) => setState(setStateSave('values', v));
   const setSubmitted = (v: boolean) => setState(setStateSave('submitted', v));
   const setFieldsVisited = (v: FieldsVisited<FORM_DATA>) => setState(setStateSave('fieldsVisited', v));
-  const setErrors = (v: FormErrors<FORM_DATA>) => setState(setStateSave('errors', v ));
+  const setErrors = (v: FormErrors<FORM_DATA>) => setState(setStateSave('errors', v));
   console.log('this.state.validating  ', state.validating);
   //
   // validation ##############################################################
@@ -262,7 +263,7 @@ export function useForm<FORM_DATA>(
   const onMultiAdd = (path: Path) => {
     const initial: any[] = getValueFromObject(path, values) as any[];
     // TODO das wird noch interessant.....
-    const valueCreator: (() => object) | undefined = getValueFromObject(path,valueCreators);
+    const valueCreator: (() => object) | undefined = getValueFromObject(path, valueCreators);
     if (valueCreator) {
       const newArray = [...(initial)];
       newArray.push(valueCreator());
@@ -280,7 +281,7 @@ export function useForm<FORM_DATA>(
 
   function subEditorProps<T>(parentFieldName: any, value: T, idx: number): SubEditorProps<T> {
     return {
-      inputProps: function (childFieldName: keyof T): FormFieldInput {
+      inputProps: function (childFieldName: Path): FormField<any> {
         const path: Path = `${parentFieldName}[${idx}].${childFieldName}`
         return createIndividualFields(path);
       }
@@ -293,32 +294,32 @@ export function useForm<FORM_DATA>(
 
 
   // 
-  function createIndividualFields(fieldName: [keyof FORM_DATA] | Path): FormFieldInput {
+  function createIndividualFields(fieldName: [keyof FORM_DATA] | Path): FormField<any> {
     const path = fieldName as Path;
-    const value = getValueFromObject(path , values);
+    const value = getValueFromObject(path, values);
     const isArray = value instanceof Array;
-    const newErrors= errors[path];
-
-    const ret: FormFieldInput = {
-      // @ts-ignore
+    const isObject = value instanceof Object;
+    const newErrors = errors[path];
+    console.log(`field ${path} ia ${isArray} io ${isObject}`)
+    const ret: FormField<any> = {
       value: value,
-      // @ts-ignore
       errorMessages: newErrors,
       name: fieldName as string,
-      onChange: updateValues,
-      onBlur: updateVisitedFields,
-      onValueChange: (newValue: any) => setValue(path, newValue),
-      onBlurChange: () => setFieldVisited(path as string),
       //@ts-ignore (how could state.validating[path] be undefined here?)
       validating: state.validating[path] !== undefined && state.validating[path] > 0
     };
-
     if (isArray) {
-      const rv = ret as any;
-      rv['onRemove'] = (idx: number) => onMultiFieldRemove(path, idx);
-      rv['onAdd'] = () => onMultiAdd(path);
-      rv['subEditorProps'] = (newValue: any, idx: number) => subEditorProps(fieldName, newValue, idx);
+      ret.onRemove = (idx: number) => onMultiFieldRemove(path, idx);
+      ret.onAdd = () => onMultiAdd(path);
+      ret.subEditorProps = (newValue: any, idx: number) => subEditorProps(fieldName, newValue, idx);
 
+    } else if (isObject) {
+      ret.onValueChange = (newValue: any) => setValue(path, newValue);
+      ret.onBlurChange = () => setFieldVisited(path as string);
+
+    } else {
+      ret.onChange = updateValues;
+      ret.onBlur = updateVisitedFields;
     }
     return ret;
 
@@ -343,37 +344,36 @@ type OverallState<FIELDS> = {
   setValue: (field: keyof FIELDS, value: string) => void;
   handleSubmit: () => void;
 };
-type HTMLInputEventEmitter =(e: React.ChangeEvent<HTMLInputElement>) => void;
-type HTMLFocusEventEmitter =(e: React.FocusEvent<HTMLInputElement>) => void;
-type InputEventEmitter =(newValue: any) => void;
-type FocusEventEmitter =() => void;
-/**
- * Properties for HTMLInputFields.
- */
-export interface FormFieldInput {
-  value: any;
+type HTMLInputEventEmitter = (e: React.ChangeEvent<HTMLInputElement>) => void;
+type HTMLFocusEventEmitter = (e: React.FocusEvent<HTMLInputElement>) => void;
+type InputEventEmitter = (newValue: any) => void;
+type FocusEventEmitter = () => void;
+type IndexType = { [key: string]: any }
+export interface FormField<T> extends IndexType {
+  value: T;
   errorMessages: any;
   name: string;
-  onChange: HTMLInputEventEmitter ;
-  onBlur: HTMLFocusEventEmitter ;
-  onValueChange: InputEventEmitter;
-  onBlurChange: FocusEventEmitter,
   validating: boolean
+}
+/**
+* Properties for HTMLInputFields.
+*/
+export interface FormFieldInput extends FormField<any> {
+  onChange: HTMLInputEventEmitter;
+  onBlur: HTMLFocusEventEmitter;
 };
 
 /**
  * Props for custom editors for any values other than primitive types such as boolean, string or number.
  */
-export interface CustomEditorProps<T> {
-  value: T;
-  errorMessages: any;
+export interface CustomEditorProps<T> extends FormField<T> {
   onValueChange: InputEventEmitter;
   onBlurChange: FocusEventEmitter
 }
 /**
  * Properties for editors for array based fields
  */
-export interface MultiFormInput<T> extends FormFieldInput {
+export interface MultiFormInput<T> extends FormField<Array<T>> {
   onValueUpdate: (pi: T, idx: number) => void;
   onRemove: (idx: number) => void;
   onAdd: () => void;
@@ -381,11 +381,10 @@ export interface MultiFormInput<T> extends FormFieldInput {
 }
 
 export interface SubEditorProps<T> {
-  inputProps: FormInputFieldPropsProducer<T>;
+  inputProps: FormInputFieldPropsProducer<any>;
 
 }
 
-export type FormInputFieldPropsProducer<T> =
-  (key: keyof T) => FormFieldInput;
+export type FormInputFieldPropsProducer<T extends IndexType> =
+  (key: Path) => FormField<T>;
 
-  

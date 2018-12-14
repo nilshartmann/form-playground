@@ -99,7 +99,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
         <button onClick={() => overallFormState.setValue("plz", "")}>
           Clear PLZ
       </button>
-        <DrinksEditor {...propsFor('drinks')}/>
+        <DrinksEditor {...propsFor('drinks') as CustomEditorProps<Drink[]> }/>
         <MultiPizzaEditor {...propsFor('pizzen') as MultiFormInput<Pizza>} />
         <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
           Bestellen !
@@ -188,7 +188,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     const fieldProps = props.inputProps;
     return <div>
       <Input label="Größe" {...fieldProps('groesse')} />
-      <BelagEditor {...fieldProps('belaege')} />
+      <BelagEditor {...fieldProps('belaege') as CustomEditorProps<string[]>} />
     </div>
   }
 
