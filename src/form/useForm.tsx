@@ -157,7 +157,11 @@ function setStateSave<FIELDS>(field: keyof State<FIELDS>, value: any): (x: State
     return s;
   }
 }
-
+export interface Form {
+  input: FormInputFieldPropsProducer<FormFieldInput, any>;
+  multi: FormInputFieldPropsProducer<MultiFormInput<any>, any>;
+  custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any>;
+}
 /**
  * A hook that creates everything that's required for building a form.
  * 
@@ -171,7 +175,7 @@ export function useForm<FORM_DATA>(
   fields: Fields<FORM_DATA>,
   submit: () => void,
   valueCreators: ValueCreators<FORM_DATA> = {}
-): [OverallState<FORM_DATA>, FormInputFieldPropsProducer<any>] {
+): [OverallState<FORM_DATA>, Form] {
   const [state, setState] = useState({ values: fields, submitted: false, fieldsVisited: {}, errors: {}, validating: {} } as State<FORM_DATA>);;
   let { values, submitted, fieldsVisited, errors } = state;
   const setValues = (v: Fields<FORM_DATA>) => setState(setStateSave('values', v));
@@ -279,14 +283,6 @@ export function useForm<FORM_DATA>(
   // ############################################################## Sub-Object Operations
   // 
 
-  function subEditorProps<T>(parentFieldName: any, value: T, idx: number): SubEditorProps<T> {
-    return {
-      inputProps: function (childFieldName: Path): FormField<any> {
-        const path: Path = `${parentFieldName}[${idx}].${childFieldName}`
-        return createIndividualFields(path);
-      }
-    }
-  }
 
   // 
   // Construction of return value
@@ -294,13 +290,10 @@ export function useForm<FORM_DATA>(
 
 
   // 
-  function createIndividualFields(fieldName: [keyof FORM_DATA] | Path): FormField<any> {
+  function createBaseIndividualFields(fieldName: Path): FormField<any> {
     const path = fieldName as Path;
     const value = getValueFromObject(path, values);
-    const isArray = value instanceof Array;
-    const isObject = value instanceof Object;
     const newErrors = errors[path];
-    console.log(`field ${path} ia ${isArray} io ${isObject}`)
     const ret: FormField<any> = {
       value: value,
       errorMessages: newErrors,
@@ -308,23 +301,45 @@ export function useForm<FORM_DATA>(
       //@ts-ignore (how could state.validating[path] be undefined here?)
       validating: state.validating[path] !== undefined && state.validating[path] > 0
     };
-    if (isArray) {
-      ret.onRemove = (idx: number) => onMultiFieldRemove(path, idx);
-      ret.onAdd = () => onMultiAdd(path);
-      ret.subEditorProps = (newValue: any, idx: number) => subEditorProps(fieldName, newValue, idx);
-
-    } else if (isObject) {
-      ret.onValueChange = (newValue: any) => setValue(path, newValue);
-      ret.onBlurChange = () => setFieldVisited(path as string);
-
-    } else {
-      ret.onChange = updateValues;
-      ret.onBlur = updateVisitedFields;
+    return ret;
+  }
+  function createArrayFields(path: Path): MultiFormInput<any> {
+    const ret = createBaseIndividualFields(path) as MultiFormInput<any>;
+    ret.onRemove = (idx: number) => onMultiFieldRemove(path, idx);
+    ret.onAdd = () => onMultiAdd(path);
+        
+    ret.subEditorProps = (newValue: any, idx: number) =>  {
+      const pathPrefix: Path = `${path}[${idx}].`
+      return createForm(pathPrefix);
     }
+    return ret;
+  }
+
+  function createCustomFields(path: Path): CustomObjectInput<any> {
+    const ret = createBaseIndividualFields(path) as CustomObjectInput<any>;
+
+    ret.onValueChange = (newValue: any) => setValue(path, newValue);
+    ret.onBlurChange = () => setFieldVisited(path as string);
+    return ret;
+  }
+
+  function createInputFields(path: Path): FormFieldInput {
+    const ret = createBaseIndividualFields(path) as FormFieldInput;
+    ret.onChange = updateValues;
+    ret.onBlur = updateVisitedFields;
+
     return ret;
 
   }
+  function createForm(parentPath:Path=''):Form {
+    
+    return {
+      custom: (path:Path) => createCustomFields(parentPath + path),
+      multi: (path:Path) => createArrayFields(parentPath + path),
+      input: (path:Path) => createInputFields(parentPath + path)
+    }
 
+  }
   return [
     // "overall" form state
     {
@@ -334,8 +349,8 @@ export function useForm<FORM_DATA>(
       handleSubmit: handleSubmit
 
     },
-    createIndividualFields
-  ] as [OverallState<FORM_DATA>, FormInputFieldPropsProducer<any>];
+    createForm()
+  ] as [OverallState<FORM_DATA>, Form];
 }
 
 type OverallState<FIELDS> = {
@@ -366,7 +381,7 @@ export interface FormFieldInput extends FormField<any> {
 /**
  * Props for custom editors for any values other than primitive types such as boolean, string or number.
  */
-export interface CustomEditorProps<T> extends FormField<T> {
+export interface CustomObjectInput<T> extends FormField<T> {
   onValueChange: InputEventEmitter;
   onBlurChange: FocusEventEmitter
 }
@@ -377,14 +392,13 @@ export interface MultiFormInput<T> extends FormField<Array<T>> {
   onValueUpdate: (pi: T, idx: number) => void;
   onRemove: (idx: number) => void;
   onAdd: () => void;
-  subEditorProps(value: any, idx: number): SubEditorProps<any>
+  subEditorProps(value: any, idx: number): Form
 }
 
-export interface SubEditorProps<T> {
-  inputProps: FormInputFieldPropsProducer<any>;
+export interface SubEditorProps<T> extends Form {
 
 }
 
-export type FormInputFieldPropsProducer<T extends IndexType> =
-  (key: Path) => FormField<T>;
+export type FormInputFieldPropsProducer<R extends FormField<T>, T extends IndexType> =
+  (key: Path) => R;
 

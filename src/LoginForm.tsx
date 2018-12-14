@@ -4,6 +4,7 @@ import { Input } from "./form/Input";
 
 // Form Logic
 import { ValidateFn, useForm } from "./form/useForm";
+import { format } from "path";
 
 interface LoginFormState {
   username: string;
@@ -25,7 +26,7 @@ const validateLoginForm: ValidateFn<LoginFormState> = function(
 };
 
 export default function LoginForm() {
-  const [overallFormState, propsFor] = useForm<
+  const [overallFormState, {input}] = useForm<
     LoginFormState
   >(validateLoginForm, {
     username: "",
@@ -38,8 +39,8 @@ export default function LoginForm() {
 
   return (
     <div className="Form">
-      <Input label="Username" {...propsFor('username')} />
-      <Input label="Password" type="password" {...propsFor('password')} />
+      <Input label="Username" {...input('username')} />
+      <Input label="Password" type="password" {...input('password')} />
       <button disabled={overallFormState.hasErrors} onClick={submit}>
         Login!
       </button>

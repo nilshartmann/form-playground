@@ -3,7 +3,8 @@ import React, { useState } from "react";
 import { Input } from "./form/Input";
 
 // Form Logic
-import { ValidateFn, useForm, ValueCreators, MultiFormInput, SubEditorProps, RecordError, ValidateAsync, AsyncValidatorFunction, CustomEditorProps } from "./form/useForm";
+import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, ValidateAsync, AsyncValidatorFunction, CustomObjectInput } from "./form/useForm";
+import { format } from "util";
 
 interface Drink {
   name: string;
@@ -88,19 +89,19 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     function submit() {
       console.log("submitting", overallFormState.values);
     }
-
-    const [overallFormState, propsFor] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
     
+    const [overallFormState, form] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
+    const {input, multi, custom} = form;
     return (
       <div className="Form">
-        <Input label="Vorname" {...propsFor('vorname')} />
-        <Input label="Nachname" {...propsFor('nachname')} />
-        <Input label="PLZ" {...propsFor('plz')} />
+        <Input label="Vorname" {...input('vorname')} />
+        <Input label="Nachname" {...input('nachname')} />
+        <Input label="PLZ" {...input('plz')} />
         <button onClick={() => overallFormState.setValue("plz", "")}>
           Clear PLZ
       </button>
-        <DrinksEditor {...propsFor('drinks') as CustomEditorProps<Drink[]> }/>
-        <MultiPizzaEditor {...propsFor('pizzen') as MultiFormInput<Pizza>} />
+        <DrinksEditor {...custom('drinks')  }/>
+        <MultiPizzaEditor {...multi('pizzen') } />
         <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
           Bestellen !
       </button>
@@ -119,7 +120,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     {name: 'Bier', size: 'groß'},
 
   ];
-  function DrinksEditor(props: CustomEditorProps<Drink[]>) {
+  function DrinksEditor(props: CustomObjectInput<Drink[]>) {
     const remove = (idx:number) => { 
       return props.value.filter( (d,i) => i!==idx);
     }
@@ -147,7 +148,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
 
 
   const alleBelaege = ["Oliven", "Feta", "Zwiebeln", "Mais", "Pilze"];
-  function BelagEditor(props: CustomEditorProps<string[]>) {
+  function BelagEditor(props: CustomObjectInput<string[]>) {
     const remove = (idx:number) => { 
       return props.value.filter( (d,i) => i!==idx);
     }
@@ -184,11 +185,10 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     </div>
   }
 
-  function PizzaEditor(props: SubEditorProps<Pizza>) {
-    const fieldProps = props.inputProps;
+  function PizzaEditor(props: Form) {
     return <div>
-      <Input label="Größe" {...fieldProps('groesse')} />
-      <BelagEditor {...fieldProps('belaege') as CustomEditorProps<string[]>} />
+      <Input label="Größe" {...props.input('groesse')} />
+      <BelagEditor {...props.custom('belaege')} />
     </div>
   }
 
