@@ -157,10 +157,10 @@ function setStateSave<FIELDS>(field: keyof State<FIELDS>, value: any): (x: State
     return s;
   }
 }
-export interface Form {
-  input: FormInputFieldPropsProducer<FormFieldInput, any>;
-  multi: FormInputFieldPropsProducer<MultiFormInput<any>, any>;
-  custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any>;
+export interface Form<FORM_DATA> {
+  input: FormInputFieldPropsProducer<FormFieldInput, any, FORM_DATA>;
+  multi: FormInputFieldPropsProducer<MultiFormInput<any>, any, FORM_DATA>;
+  custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any, FORM_DATA>;
 }
 /**
  * A hook that creates everything that's required for building a form.
@@ -175,7 +175,7 @@ export function useForm<FORM_DATA>(
   fields: Fields<FORM_DATA>,
   submit: () => void,
   valueCreators: ValueCreators<FORM_DATA> = {}
-): [OverallState<FORM_DATA>, Form] {
+): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
   const [state, setState] = useState({ values: fields, submitted: false, fieldsVisited: {}, errors: {}, validating: {} } as State<FORM_DATA>);;
   let { values, submitted, fieldsVisited, errors } = state;
   const setValues = (v: Fields<FORM_DATA>) => setState(setStateSave('values', v));
@@ -303,9 +303,9 @@ export function useForm<FORM_DATA>(
     };
     return ret;
   }
-  function createArrayFields(path: Path): MultiFormInput<any> {
-    const ret = createBaseIndividualFields(path) as MultiFormInput<any>;
-    ret.onRemove = (idx: number) => onMultiFieldRemove(path, idx);
+  function createArrayFields<ARRAY_CONTENT_TYPE>(path: Path): MultiFormInput<ARRAY_CONTENT_TYPE> {
+    const ret = createBaseIndividualFields(path ) as MultiFormInput<any>;
+    ret.onRemove = (idx: number) => onMultiFieldRemove(path , idx);
     ret.onAdd = () => onMultiAdd(path);
         
     ret.subEditorProps = (newValue: any, idx: number) =>  {
@@ -315,7 +315,7 @@ export function useForm<FORM_DATA>(
     return ret;
   }
 
-  function createCustomFields(path: Path): CustomObjectInput<any> {
+  function createCustomFields(path: Path ): CustomObjectInput<any> {
     const ret = createBaseIndividualFields(path) as CustomObjectInput<any>;
 
     ret.onValueChange = (newValue: any) => setValue(path, newValue);
@@ -331,12 +331,12 @@ export function useForm<FORM_DATA>(
     return ret;
 
   }
-  function createForm(parentPath:Path=''):Form {
+  function createForm(parentPath:Path=''):Form<FORM_DATA> {
     
     return {
-      custom: (path:Path) => createCustomFields(parentPath + path),
-      multi: (path:Path) => createArrayFields(parentPath + path),
-      input: (path:Path) => createInputFields(parentPath + path)
+      custom: (path:keyof FORM_DATA) => createCustomFields(parentPath + path),
+      multi: (path:keyof FORM_DATA) => createArrayFields(parentPath + path ) ,
+      input: (path:keyof FORM_DATA) => createInputFields(parentPath + path)
     }
 
   }
@@ -350,7 +350,7 @@ export function useForm<FORM_DATA>(
 
     },
     createForm()
-  ] as [OverallState<FORM_DATA>, Form];
+  ] as [OverallState<FORM_DATA>, Form<FORM_DATA>];
 }
 
 type OverallState<FIELDS> = {
@@ -388,17 +388,17 @@ export interface CustomObjectInput<T> extends FormField<T> {
 /**
  * Properties for editors for array based fields
  */
-export interface MultiFormInput<T> extends FormField<Array<T>> {
-  onValueUpdate: (pi: T, idx: number) => void;
+export interface MultiFormInput<ARRAY_CONTENT_TYPE> extends FormField<Array<ARRAY_CONTENT_TYPE>> {
+  onValueUpdate: (pi: ARRAY_CONTENT_TYPE, idx: number) => void;
   onRemove: (idx: number) => void;
   onAdd: () => void;
-  subEditorProps(value: any, idx: number): Form
+  subEditorProps(value: any, idx: number): Form<ARRAY_CONTENT_TYPE>
 }
 
-export interface SubEditorProps<T> extends Form {
+export interface SubEditorProps<ARRAY_CONTENT_TYPE> extends Form<ARRAY_CONTENT_TYPE> {
 
 }
 
-export type FormInputFieldPropsProducer<R extends FormField<T>, T extends IndexType> =
-  (key: Path) => R;
+export type FormInputFieldPropsProducer<R extends FormField<T>, T extends IndexType, FORM_DATA> =
+  (key: keyof FORM_DATA) => R;
 
