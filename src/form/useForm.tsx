@@ -57,7 +57,6 @@ function getNewStateAfterAsyncValidation<FIELDS>(
     // ...omitting anything that should be validated delayed
     DontValidateAnythingDelayed
   );
-  console.log('newState ', newState);
   return { ...newState, errors: newErrors, validating: validating }
 }
 
@@ -158,6 +157,7 @@ function setStateSave<FIELDS>(field: keyof State<FIELDS>, value: any): (x: State
   }
 }
 export interface Form<FORM_DATA> {
+  data: FORM_DATA,
   input: FormInputFieldPropsProducer<FormFieldInput, any, FORM_DATA>;
   multi: FormInputFieldPropsProducer<MultiFormInput<any>, any, FORM_DATA>;
   custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any, FORM_DATA>;
@@ -182,7 +182,6 @@ export function useForm<FORM_DATA>(
   const setSubmitted = (v: boolean) => setState(setStateSave('submitted', v));
   const setFieldsVisited = (v: FieldsVisited<FORM_DATA>) => setState(setStateSave('fieldsVisited', v));
   const setErrors = (v: FormErrors<FORM_DATA>) => setState(setStateSave('errors', v));
-  console.log('this.state.validating  ', state.validating);
   //
   // validation ##############################################################
   // 
@@ -310,7 +309,7 @@ export function useForm<FORM_DATA>(
         
     ret.subEditorProps = (newValue: any, idx: number) =>  {
       const pathPrefix: Path = `${path}[${idx}].`
-      return createForm(pathPrefix);
+      return createForm({...newValue}, pathPrefix);
     }
     return ret;
   }
@@ -331,9 +330,10 @@ export function useForm<FORM_DATA>(
     return ret;
 
   }
-  function createForm(parentPath:Path=''):Form<FORM_DATA> {
+  function createForm( data:FORM_DATA, parentPath:Path=''):Form<FORM_DATA> {
     
     return {
+      data: data,
       custom: (path:keyof FORM_DATA) => createCustomFields(parentPath + path),
       multi: (path:keyof FORM_DATA) => createArrayFields(parentPath + path ) ,
       input: (path:keyof FORM_DATA) => createInputFields(parentPath + path)
@@ -349,7 +349,7 @@ export function useForm<FORM_DATA>(
       handleSubmit: handleSubmit
 
     },
-    createForm()
+    createForm(values)
   ] as [OverallState<FORM_DATA>, Form<FORM_DATA>];
 }
 

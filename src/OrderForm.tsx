@@ -3,6 +3,7 @@ import ErrorDisplay from './form/errorDisplay';
 
 // UI (independent from useForm hook)
 import { Input } from "./form/Input";
+import { isEqual } from "lodash";
 
 // Form Logic
 import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, ValidateAsync, AsyncValidatorFunction, CustomObjectInput } from "./form/useForm";
@@ -62,7 +63,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
           }
         }
       }
-      validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)), 'plz');
+      validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), 2000)), 'plz');
     }
   }
 
@@ -93,10 +94,9 @@ export default function OrderForm() {
   function submit() {
     console.log("submitting", overallFormState.values);
   }
-
   const [overallFormState, form] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
   const { input, multi, custom } = form;
-
+      
   return (
     <div className="Form">
       <Input label="Vorname" {...input('vorname')} />
@@ -106,12 +106,12 @@ export default function OrderForm() {
         Clear PLZ
       </button>
       <DrinksEditor {...custom('drinks')} />
+      <button onClick={() => console.log(overallFormState.values)}>
+        Show Form State
+      </button>
       <MultiPizzaEditor {...multi('pizzen')} />
       <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
         Bestellen !
-      </button>
-      <button onClick={() => console.log(overallFormState.values)}>
-        Show Form State
       </button>
     </div>
   );
@@ -173,27 +173,33 @@ function BelagEditor(props: CustomObjectInput<string[]>) {
   </div>
 }
 
+const MemoPizzaEditor = React.memo(PizzaEditor, (oldProps, newProps) =>
+{const ret = oldProps.count === newProps.count && isEqual(oldProps.data, newProps.data);
+console.log('ret: ', ret); 
+return ret;
+}
+
+  );
 
 
 function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
   return <div>
+    <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
     {
       props.value.map((pi: Pizza, idx: number) =>
-        <div key={idx}>
-          <PizzaEditor {...props.subEditorProps(pi, idx)} />
-          <button onClick={() => props.onRemove(idx)} >entfernen</button>
-        </div>
+        <MemoPizzaEditor {...props.subEditorProps(pi, idx)} key={idx} count={props.value.length} id={idx} onRemove={props.onRemove} />
       )
     }
     <ErrorDisplay errorMessages={props.errorMessages} />
-    <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
   </div>
 }
 
-function PizzaEditor(props: Form<Pizza>) {
+function PizzaEditor(props: Form<Pizza> & {id: number, count: number, onRemove: (idx: number) => void}) {
   return <div>
     <Input label="Größe" {...props.input('groesse')} />
     <BelagEditor {...props.custom('belaege')} />
+    <button onClick={() => props.onRemove(props.id)} >entfernen</button>
+
   </div>
 }
 
