@@ -37,18 +37,24 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FI
 function getNewStateAfterAsyncValidation<FIELDS>(
   validate: ValidateFn<FIELDS>,
   newState: State<FIELDS>,
-  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
+  promise: Promise<AsyncValidatorFunction<FIELDS>>,
   asyncVF: AsyncValidatorFunction<FIELDS>,
-  path?: Path): State<FIELDS> {
-  const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
+  path: Path): State<FIELDS> {
+  //@ts-ignore
+    console.log('validating done currently active validators: ' + newState.validating[path].length);
+
+    const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
   const errorRecorder = createErrorRecorder(newErrors);
   // first validate the on async field
   asyncVF(newState.values, errorRecorder);
-  const validating = { ...(newState.validating as any) }
-  if (path) {
-    //@ts-ignore (why could validating[path] be undefined)     
-    validating[path]--;
+  //@ts-ignore
+  const validating = { ...(newState.validating)} ;
+  if (validating[path] ) {
+    const validatingArray = validating[path] as Promise<AsyncValidatorFunction<FIELDS>>[]; 
+    validating[path] = validatingArray.filter( p => promise !== p);
   }
+  //@ts-ignore
+  console.log('validating done ' + validating[path].length);
 
   // then validate anything else...
   validate(newState.values,
@@ -66,21 +72,23 @@ function getNewStateAfterAsyncValidation<FIELDS>(
 function createValidateDelayed<FIELDS>(
   state: State<FIELDS>,
   setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
+  setValidate: (v: Validating<FIELDS>) => void,
   validate: ValidateFn<FIELDS>
 ): ValidateAsync<FIELDS> {
 
-  const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>, path?: Path) {
-    const validating = { ...(state.validating as any) }
+  const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>, path: Path) {
     if (path) {
       if (state.validating[path] !== undefined) {
         //@ts-ignore (why could validating[path] be undefined)     
-        state.validating[path]++;
+        state.validating[path].push(promise);
       } else {
-        state.validating[path] = 1;
+        state.validating[path] = [promise];
       }
     }
-
-    promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, newState, setState, dvf, path)));
+    setValidate(state.validating);
+    //@ts-ignore
+    console.log('validating initiated ' + state.validating[path].length);
+    promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, newState, promise, dvf, path)));
   }
   return validateAsyncFunction;
 
@@ -92,7 +100,7 @@ type Fields<FIELDS> = { [P in keyof FIELDS]: any };
 type Partial<T> = { [P in keyof T]: T[P] };
 
 type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
-type Validating<FIELDS> = { [P in keyof FIELDS | string]?: number };
+type Validating<FIELDS> = { [P in keyof FIELDS | string]?: Promise<AsyncValidatorFunction<FIELDS>>[] };
 type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
 
 type Path = string;
@@ -122,7 +130,7 @@ export type AsyncValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorde
 /**
  * Registers a promise for an async validation. When the promis resolves the supplies AsyncValidatorFunction is called.
  */
-export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIELDS>>, fieldname?: Path) => void;
+export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIELDS>>, fieldname: Path) => void;
 
 /**
  * A validator function validates all the forms values.
@@ -182,6 +190,7 @@ export function useForm<FORM_DATA>(
   const setSubmitted = (v: boolean) => setState(setStateSave('submitted', v));
   const setFieldsVisited = (v: FieldsVisited<FORM_DATA>) => setState(setStateSave('fieldsVisited', v));
   const setErrors = (v: FormErrors<FORM_DATA>) => setState(setStateSave('errors', v));
+  const setValidate = (v: Validating<FORM_DATA>) => setState(setStateSave('validating', v));
   //
   // validation ##############################################################
   // 
@@ -191,7 +200,7 @@ export function useForm<FORM_DATA>(
       newValues,
       fieldName => (fieldsVisited[fieldName] === true) || (allFields === true),
       createErrorRecorder(newErrors),
-      createValidateDelayed(state, setState, validate)
+      createValidateDelayed(state, setState, setValidate, validate)
     );
     setErrors(newErrors);
     return newErrors;
@@ -298,7 +307,7 @@ export function useForm<FORM_DATA>(
       errorMessages: newErrors,
       name: fieldName as string,
       //@ts-ignore (how could state.validating[path] be undefined here?)
-      validating: state.validating[path] !== undefined && state.validating[path] > 0
+      validating: state.validating[path] !== undefined && state.validating[path].length > 0
     };
     return ret;
   }
