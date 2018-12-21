@@ -36,17 +36,13 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FI
  */
 function getNewStateAfterAsyncValidation<FIELDS>(
   validate: ValidateFn<FIELDS>,
+  oldState: State<FIELDS>,
   newState: State<FIELDS>,
   promise: Promise<AsyncValidatorFunction<FIELDS>>,
   asyncVF: AsyncValidatorFunction<FIELDS>,
   path: Path): State<FIELDS> {
   //@ts-ignore
     console.log('validating done currently active validators: ' + newState.validating[path].length);
-
-    const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
-  const errorRecorder = createErrorRecorder(newErrors);
-  // first validate the on async field
-  asyncVF(newState.values, errorRecorder);
   //@ts-ignore
   const validating = { ...(newState.validating)} ;
   if (validating[path] ) {
@@ -55,6 +51,20 @@ function getNewStateAfterAsyncValidation<FIELDS>(
   }
   //@ts-ignore
   console.log('validating done ' + validating[path].length);
+  const oldValue = getValueFromObject(path, oldState.values);
+  const newValue = getValueFromObject(path, newState.values);
+  if (newValue !== oldValue) {
+    // validated value is obsolete.
+    console.log(`validation result ignored as ${oldValue} does not equal ${newValue}` );
+    return newState;
+  } else {
+    console.log(`trigger validation as ${oldValue} does equal ${newValue}` );
+    console.log('state ', newState);
+  }
+  const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
+  const errorRecorder = createErrorRecorder(newErrors);
+  // first validate the on async field
+  asyncVF(newState.values, errorRecorder);
 
   // then validate anything else...
   validate(newState.values,
@@ -88,7 +98,7 @@ function createValidateDelayed<FIELDS>(
     setValidate(state.validating);
     //@ts-ignore
     console.log('validating initiated ' + state.validating[path].length);
-    promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, newState, promise, dvf, path)));
+    promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, state, newState, promise, dvf, path)));
   }
   return validateAsyncFunction;
 

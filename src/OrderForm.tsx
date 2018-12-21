@@ -54,16 +54,14 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
       recordError("plz", "Postleitzahl nicht im Liefergebiet", true);
     } else if (isVisited('plz') && plzCache.indexOf(newFormInput.plz) === -1) {
       const validation: AsyncValidatorFunction<OrderFormState> = (currentValue, errorRecorder) => {
-        if (currentValue.plz === newFormInput.plz) {
-          if (['22305', '22159', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
-            errorRecorder("plz", "Postleitzahl nicht im Liefergebiet", true);
-            invalidPlzCache.push(newFormInput.plz);
-          } else {
-            plzCache.push(newFormInput.plz);
-          }
+        if (['22305', '22159', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
+          errorRecorder("plz", "Postleitzahl nicht im Liefergebiet", true);
+          invalidPlzCache.push(newFormInput.plz);
+        } else {
+          plzCache.push(newFormInput.plz);
         }
       }
-      validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), 2000)), 'plz');
+      validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)), 'plz');
     }
   }
 
@@ -96,7 +94,7 @@ export default function OrderForm() {
   }
   const [overallFormState, form] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
   const { input, multi, custom } = form;
-      
+
   return (
     <div className="Form">
       <Input label="Vorname" {...input('vorname')} />
@@ -173,13 +171,11 @@ function BelagEditor(props: CustomObjectInput<string[]>) {
   </div>
 }
 
-const MemoPizzaEditor = React.memo(PizzaEditor, (oldProps, newProps) =>
-{const ret = oldProps.count === newProps.count && isEqual(oldProps.data, newProps.data);
-console.log('ret: ', ret); 
-return ret;
-}
-
-  );
+const MemoPizzaEditor = React.memo(PizzaEditor, (oldProps, newProps) => {
+  const ret = oldProps.count === newProps.count && isEqual(oldProps.data, newProps.data);
+  console.log('ret: ', ret);
+  return ret;
+});
 
 
 function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
@@ -194,7 +190,7 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
   </div>
 }
 
-function PizzaEditor(props: Form<Pizza> & {id: number, count: number, onRemove: (idx: number) => void}) {
+function PizzaEditor(props: Form<Pizza> & { id: number, count: number, onRemove: (idx: number) => void }) {
   return <div>
     <Input label="Größe" {...props.input('groesse')} />
     <BelagEditor {...props.custom('belaege')} />
