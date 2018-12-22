@@ -47,7 +47,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
       recordError("nachname", "Vorname muss kürzer als Nachname sein");
     }
   }
-  if (isVisited('plz') && newFormInput.plz.length < 5) {
+  if (isVisited('plz') && newFormInput.plz.length != 5) {
     recordError("plz", "Postleitzahlen müssen fünf Ziffern haben", true);
   } else {
     if (isVisited('plz') && invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
@@ -61,7 +61,9 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
           plzCache.push(newFormInput.plz);
         }
       }
-      validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), 5000)), 'plz');
+      const durationString = newFormInput.plz.charAt(4);
+      const duration:number = /[0-9]{1}/.test(durationString) ? +durationString : 5;
+      validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), duration * 1000)), 'plz');
     }
   }
 
