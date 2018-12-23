@@ -15,7 +15,7 @@ class App extends Component {
             <h1>Example: Login Form</h1>
             <LoginForm />
             <h1>Pizza ist das Beste...</h1>
-            <OrderForm />
+            <OrderForm submit={() => { console.log('submitted')}} />
           </main>
         </div>
       </>

@@ -48,13 +48,13 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     }
   }
   if (isVisited('plz') && newFormInput.plz.length != 5) {
-    recordError("plz", "Postleitzahlen müssen fünf Ziffern haben", true);
+    recordError("plz", "Postleitzahlen müssen fünf Ziffern haben" , true);
   } else {
     if (isVisited('plz') && invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
       recordError("plz", "Postleitzahl nicht im Liefergebiet", true);
     } else if (isVisited('plz') && plzCache.indexOf(newFormInput.plz) === -1) {
       const validation: AsyncValidatorFunction<OrderFormState> = (currentValue, errorRecorder) => {
-        if (['22305', '22159', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
+        if (['22305', '22159','22300', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
           errorRecorder("plz", "Postleitzahl nicht im Liefergebiet", true);
           invalidPlzCache.push(newFormInput.plz);
         } else {
@@ -89,14 +89,14 @@ const valueCreators: ValueCreators<OrderFormState> = {
   pizzen: () => { return { groesse: 60, belaege: [] } }
 }
 
+interface OrderFormProps {
+  submit: () => void;
+}
 
-export default function OrderForm() {
-  function submit() {
-    console.log("submitting", overallFormState.values);
-  }
-  const [overallFormState, form] = useForm<OrderFormState>(validatePizzaForm, initialValues, submit, valueCreators);
+export default function OrderForm(props: OrderFormProps) {
+  const [overallFormState, form] = useForm<OrderFormState>(validatePizzaForm, initialValues, props.submit, valueCreators);
   const { input, multi, custom } = form;
-
+  console.log('render ' , overallFormState.values);
   return (
     <div className="Form">
       <Input label="Vorname" {...input('vorname')} />
