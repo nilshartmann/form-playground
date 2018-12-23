@@ -40,8 +40,6 @@ function getNewStateAfterAsyncValidation<FIELDS>(
   newState: State<FIELDS>,
   asyncVF: AsyncValidatorFunction<FIELDS>,
   path: Path): State<FIELDS> {
-  //@ts-ignore
-  console.log('validating done currently active validators: ' + newState.validating[path].length);
   //@ts-ignore another ts Bug? Only occurs in the browser? Not in VSCode?!
   const validating = { ...(newState.validating) };
   //@ts-ignore
@@ -68,7 +66,6 @@ function getNewStateAfterAsyncValidation<FIELDS>(
     // ...omitting anything that should be validated delayed
     DontValidateAnythingDelayed
   );
-  console.log('-----------------------------------------');
   return { ...newState, errors: newErrors, validating: validating }
 }
 
@@ -201,7 +198,6 @@ export function useForm<FORM_DATA>(
   // validation ##############################################################
   // 
   const doValidation = (currentState: State<FORM_DATA>, allFields: boolean) => {
-    console.log('validating');
     const newErrors: FormErrors<FORM_DATA> = {};
     validate(
       currentState.values,
@@ -209,7 +205,6 @@ export function useForm<FORM_DATA>(
       createErrorRecorder(newErrors),
       createValidateDelayed(state, setState, setValidate, validate)
     );
-    console.log('newErrors ', newErrors);
     return newErrors;
   }
 
@@ -231,7 +226,6 @@ export function useForm<FORM_DATA>(
    * @param newValue the new value
    */
   const setValue = (path: Path | keyof FORM_DATA, newValue: any) => {
-    console.log('setValue on ' + path + ' to ' + newValue)
     setState(currentState => {
       return setValueOnState(path, newValue, currentState);
     })
@@ -239,7 +233,6 @@ export function useForm<FORM_DATA>(
 
   const setValueOnState = (path: Path | keyof FORM_DATA, newValue: any, currentState: State<FORM_DATA>) => {
     const newState = { ...currentState };
-    console.log('currentSate.values ', currentState.values);
     const newValues = Object.assign({}, currentState.values);
     setValueOnObject(path as string, newValues, newValue);
     newState.values = newValues
@@ -273,24 +266,17 @@ export function useForm<FORM_DATA>(
 
   function handleSubmit() {
     setState((state) => {
-      console.log('handle submit');
       const errors = doValidation(state, true);
-      console.log('validation done');
       state = { ...state, submitted: true, errors: errors };
       const pendingPromises: Promise<AsyncValidatorFunction<any>>[] = []
-      console.log('pending promises ', pendingPromises);
-
       Object.values(state.validating).map((values: Promise<AsyncValidatorFunction<any>>[] | undefined) => {
         if (values) {
           pendingPromises.push(...values);
         }
       });
       Promise.all(pendingPromises).then(x => {
-        console.log('promises resolved');
-
         setState(s => {
           if (Object.keys(s.errors).length === 0) {
-            console.log('Now Submitting after delay');
             submit();
           } else {
             console.log('Errors found, submit aborted ', s.errors);
