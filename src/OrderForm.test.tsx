@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { render, fireEvent, cleanup, waitForElement, wait } from 'react-testing-library'
+import { render, fireEvent, cleanup, waitForElement, wait, getByText } from 'react-testing-library'
 // this adds custom jest matchers from jest-dom
 
 import OrderForm from './OrderForm';
@@ -47,7 +47,7 @@ it('should disable submit button if errors present', () => {
     expect(errors.length).toBeGreaterThan(0);
     expect((submit as HTMLButtonElement).disabled).toBe(true);
 });
-it('should display yyy validating when async validation is triggered', async () => {
+it('should display validating when async validation is triggered', async () => {
     const wrapper = render(<OrderForm submit={() => { }} />);
     const plzField = wrapper.getByLabelText('PLZ') as HTMLInputElement;
     fireEvent.click(plzField);
@@ -61,9 +61,9 @@ it('should display yyy validating when async validation is triggered', async () 
 
     await wait(() => { expect(wrapper.queryAllByText(validatingText)).toHaveLength(0) });
 });
-it('should submitttt', async () => {
+it('should submit', async () => {
     const submitted = { submitted: false };
-    const wrapper = render(<OrderForm submit={() => { console.log('submitted'); submitted.submitted = true }} />);
+    const wrapper = render(<OrderForm submit={() => { submitted.submitted = true }} />);
     const plzField = wrapper.getByLabelText('PLZ') as HTMLInputElement;
     const nameField = wrapper.getByLabelText('Nachname') as HTMLInputElement;
     const vornameField = wrapper.getByLabelText('Vorname') as HTMLInputElement;
@@ -83,23 +83,27 @@ it('should submitttt', async () => {
     fireChange(groesseField, '20');
 
     fireEvent.click(submitButton);
-    console.log(new Date() , 'wait.' , plzField.value);
-    await wait(() => { console.log('callback'); return true; });
-    console.log(new Date() , 'done waiting');
-    const greetingTextNode = await waitForElement(() =>
-        wrapper.getByLabelText('Größe')
-    )
-    
+    await wait(() => { return true; });
+
     expect(submitted.submitted).toEqual(true);
-    console.log(submitted.submitted);
 });
-
-
-function validForm() {
-
-}
-
-
+it('should ignore outdated validation responses', async () => {
+    const submitted = { submitted: false };
+    const wrapper = render(<OrderForm submit={() => { submitted.submitted = true }} />);
+    const plzField = wrapper.getByLabelText('PLZ') as HTMLInputElement;
+    fireEvent.change(plzField, {
+        target: { value: '22305' },
+    });
+    fireEvent.blur(plzField);
+    fireEvent.change(plzField, {
+        target: { value: '22302' },
+    });
+    fireEvent.blur(plzField);
+    const greetingTextNode = await waitForElement(() =>
+        wrapper.getByText('Postleitzahl nicht im Liefergebiet',)
+    )
+    expect(greetingTextNode).toBe
+});
 function fireChange(input: HTMLInputElement, value: string | number) {
     fireEvent.change(input, {
         target: { value },

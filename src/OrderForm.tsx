@@ -96,7 +96,6 @@ interface OrderFormProps {
 export default function OrderForm(props: OrderFormProps) {
   const [overallFormState, form] = useForm<OrderFormState>(validatePizzaForm, initialValues, props.submit, valueCreators);
   const { input, multi, custom } = form;
-  console.log('render ' , overallFormState.values);
   return (
     <div className="Form">
       <Input label="Vorname" {...input('vorname')} />
@@ -175,7 +174,6 @@ function BelagEditor(props: CustomObjectInput<string[]>) {
 
 const MemoPizzaEditor = React.memo(PizzaEditor, (oldProps, newProps) => {
   const ret = oldProps.count === newProps.count && isEqual(oldProps.data, newProps.data);
-  console.log('ret: ', ret);
   return ret;
 });
 

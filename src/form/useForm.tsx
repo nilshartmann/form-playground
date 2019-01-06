@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { setValueOnObject, getValueFromObject } from './helpers'
-import { stat } from "fs";
 
 
 //
@@ -73,28 +72,33 @@ function getNewStateAfterAsyncValidation<FIELDS>(
  * Creator function for the ValidateAsync helper function.
  */
 function createValidateDelayed<FIELDS>(
-  state: State<FIELDS>,
   setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
-  setValidate: (v: Validating<FIELDS>) => void,
   validate: ValidateFn<FIELDS>
 ): ValidateAsync<FIELDS> {
 
   const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>, path: Path) {
-    if (path) {
-      if (state.validating[path] !== undefined) {
-        //@ts-ignore (why could validating[path] be undefined)     
-        state.validating[path].push(promise);
-      } else {
-        state.validating[path] = [promise];
+    setState((currentState: State<FIELDS>) => {
+      const newState = { ...currentState };
+      if (path) {
+        if (newState.validating[path] !== undefined) {
+          //@ts-ignore (why could validating[path] be undefined)     
+          newState.validating[path].push(promise);
+        } else {
+          newState.validating[path] = [promise];
+        }
       }
-    }
-    setValidate(state.validating);
-    //@ts-ignore
-    const currentValues = { ...(state.values as any) };
-    promise.then((dvf: AsyncValidatorFunction<FIELDS>) => setState((newState) => getNewStateAfterAsyncValidation(validate, currentValues, newState, dvf, path)));
+
+
+      //@ts-ignore
+      const currentValues = { ...(newState.values as any) };
+      promise.then(
+        (dvf: AsyncValidatorFunction<FIELDS>) => {
+          setState((newState: State<FIELDS>) => getNewStateAfterAsyncValidation(validate, currentValues, newState, dvf, path))
+        });
+      return newState;
+    });
   }
   return validateAsyncFunction;
-
 }
 const DontValidateAnythingDelayed: ValidateAsync<any> = (p) => { };
 
@@ -161,12 +165,6 @@ interface State<FIELDS> {
   validating: Validating<FIELDS>
 }
 
-function mergeToState<FIELDS>(field: keyof State<FIELDS>, value: any): (x: State<FIELDS>) => State<FIELDS> {
-  return (s: State<FIELDS>) => {
-    s[field] = value;
-    return s;
-  }
-}
 export interface Form<FORM_DATA> {
   data: FORM_DATA,
   input: FormInputFieldPropsProducer<FormFieldInput, any, FORM_DATA>;
@@ -189,11 +187,6 @@ export function useForm<FORM_DATA>(
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
   const [state, setState] = useState({ values: fields, submitted: false, fieldsVisited: {}, errors: {}, validating: {} } as State<FORM_DATA>);;
   let { values, errors } = state;
-  // const setValues = (v: Fields<FORM_DATA>) => setState(mergeToState('values', v));
-  // const setSubmitted = (v: boolean) => setState(mergeToState('submitted', v));
-  // const setFieldsVisited = (v: FieldsVisited<FORM_DATA>) => setState(mergeToState('fieldsVisited', v));
-  // const setErrors = (v: FormErrors<FORM_DATA>) => setState(mergeToState('errors', v));
-  const setValidate = (v: Validating<FORM_DATA>) => setState(mergeToState('validating', v));
   //
   // validation ##############################################################
   // 
@@ -203,7 +196,7 @@ export function useForm<FORM_DATA>(
       currentState.values,
       fieldName => (currentState.fieldsVisited[fieldName] === true) || (allFields === true),
       createErrorRecorder(newErrors),
-      createValidateDelayed(state, setState, setValidate, validate)
+      createValidateDelayed(setState, validate)
     );
     return newErrors;
   }
@@ -251,7 +244,7 @@ export function useForm<FORM_DATA>(
 
   function setFieldVisited(fieldName: string) {
     setState(currentState => {
-      const newState = { ...currentState};
+      const newState = { ...currentState };
       const newFieldsVisited = {
         // https://stackoverflow.com/a/51193091/6134498
         ...(currentState.fieldsVisited as any),
@@ -298,7 +291,6 @@ export function useForm<FORM_DATA>(
       return setValueOnState(path, newArray, currentState);
     })
   }
-  //onMultiFieldChange: (pi: Pizza, idx: number) => void;
   const onMultiAdd = (path: Path) => {
     setState(currentState => {
       const initial: any[] = getValueFromObject(path, currentState.values) as any[];
@@ -317,17 +309,9 @@ export function useForm<FORM_DATA>(
     });
   }
 
-  //
-  // ############################################################## Sub-Object Operations
-  // 
-
-
   // 
   // Construction of return value
   //
-
-
-  // 
   function createBaseIndividualFields(fieldName: Path): FormField<any> {
     const path = fieldName as Path;
     const value = getValueFromObject(path, values);
@@ -341,6 +325,7 @@ export function useForm<FORM_DATA>(
     };
     return ret;
   }
+
   function createArrayFields<ARRAY_CONTENT_TYPE>(path: Path): MultiFormInput<ARRAY_CONTENT_TYPE> {
     const ret = createBaseIndividualFields(path) as MultiFormInput<any>;
     ret.onRemove = (idx: number) => onMultiFieldRemove(path, idx);
