@@ -6,7 +6,7 @@ import { Input } from "./form/Input";
 import { isEqual } from "lodash";
 
 // Form Logic
-import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, ValidateAsync, AsyncValidatorFunction, CustomObjectInput } from "./form/useForm";
+import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError,RecordErrorAsync, ValidateAsync, AsyncValidatorFunction, CustomObjectInput } from "./form/useForm";
 
 interface Drink {
   name: string;
@@ -31,9 +31,9 @@ const invalidPlzCache: string[] = [];
 const validatePizzaForm: ValidateFn<OrderFormState> = function (
   newFormInput,
   isVisited,
-  recordError: RecordError<OrderFormState>,
-  validateDelayed: ValidateAsync<OrderFormState>
-) {
+  recordError: RecordError,
+  recordErrorAsync: RecordErrorAsync
+  ) {
   if (isVisited("vorname") && newFormInput.vorname.length < 3) {
     recordError("vorname", "Der Vorname muss mindestens 3 Zeichen lang sein");
   }
@@ -51,22 +51,28 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     recordError("plz", "Postleitzahlen müssen fünf Ziffern haben" , true);
   } else {
     if (isVisited('plz') && invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
-      recordError("plz", "Postleitzahl nicht im Liefergebiet", true);
+      recordError("plz", "Postleitzahl nicht im Liefergebiet (cached)", true);
     } else if (isVisited('plz') && plzCache.indexOf(newFormInput.plz) === -1) {
-      const validation: AsyncValidatorFunction<OrderFormState> = (currentValue, errorRecorder) => {
-        if (['22305', '22159','22300', '22761', '22222'].indexOf(newFormInput.plz) === -1) {
-          errorRecorder("plz", "Postleitzahl nicht im Liefergebiet", true);
+      const durationString = newFormInput.plz.charAt(4);
+      const duration:number = (/[0-9]{1}/.test(durationString) ? +durationString : 5) * 1000;
+
+      const validation = async () =>  {
+        let fakeResponse = ['22305', '22159','22300', '22761', '22222'].indexOf(newFormInput.plz) === -1;
+        let invalid = await fetchMock(fakeResponse,duration);
+        if (invalid) {
           invalidPlzCache.push(newFormInput.plz);
+          return "Postleitzahl nicht im Liefergebiet";         
         } else {
           plzCache.push(newFormInput.plz);
+          return null;    
         }
       }
-      const durationString = newFormInput.plz.charAt(4);
-      const duration:number = /[0-9]{1}/.test(durationString) ? +durationString : 5;
-      validateDelayed(new Promise((res, rej) => window.setTimeout(() => res(validation), duration * 1000)), 'plz');
+
+      recordErrorAsync("plz", validation());
+            
+    
     }
   }
-
 
   if (isVisited('pizzen') && newFormInput.pizzen.length === 0) {
     recordError('pizzen', 'Es muss mindestens eine Pizza bestellt werden');
@@ -78,6 +84,13 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   });
 
 }
+
+
+function fetchMock<T>(response: T, timeout: number):Promise<T> {
+  console.log('simulating an answer in '  + timeout + ' ms');
+  return new Promise((res) => window.setTimeout(() => res(response), timeout));
+}
+
 const initialValues: OrderFormState = {
   vorname: "test",
   nachname: "",

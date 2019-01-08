@@ -1,5 +1,6 @@
 import { useState, SyntheticEvent, useEffect } from "react";
 import { setValueOnObject, getValueFromObject } from './helpers'
+import { promises } from "fs";
 
 
 
@@ -11,7 +12,7 @@ import { setValueOnObject, getValueFromObject } from './helpers'
  * 
  * @param errors the objects where the errors should be recorded in
  */
-function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FIELDS> {
+function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError {
   return function (field: keyof FIELDS | string, msg: string, exclusive: boolean = false) {
     //TODO Why is that:
     //[ts] Type 'string | keyof FIELDS' cannot be used to index type 'string | FormErrors<FIELDS>'. [2536]
@@ -26,21 +27,43 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FI
     }
   };
 }
-/**
- * 
- * Computes the new state of the Form after an async validation.
- * 
- * @param validate the form's validator function
- * @param newState the current state of the form
- * @param asyncVF an async validator function
- */
-function getNewStateAfterAsyncValidation<FIELDS>(
-  validate: ValidateFn<FIELDS>,
-  oldValues: Fields<FIELDS>,
-  newState: State<FIELDS>,
-  asyncVF: AsyncValidatorFunction<FIELDS>,
-  path: Path): State<FIELDS> {
-  //@ts-ignore another ts Bug? Only occurs in the browser? Not in VSCode?!
+
+
+// /**
+//  * 
+//  * Computes the new state of the Form after an async validation.
+//  * 
+//  * @param validate the form's validator function
+//  * @param newState the current state of the form
+//  * @param asyncVF an async validator function
+//  */
+
+
+function createAsyncErrorRecorder<FIELDS>(currentState: State<FIELDS>,
+  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>): RecordErrorAsync {
+  return (path: Path, newErrorPromise: Promise<string | null>) => {
+    // remeber the prmoise... 
+    if (currentState.validating[path] !== undefined) {
+      //@ts-ignore (why could validating[path] be undefined)     
+      currentState.validating[path].push(newErrorPromise);
+    } else {
+      currentState.validating[path] = [newErrorPromise];
+    }
+    newErrorPromise.then(applyErrorAsync<FIELDS>(currentState.values, setState, path));
+  };
+}
+
+function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>, setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>, 
+  path: string) : (newError: string|null) => void {
+  return (newError) => {
+    setState((newState) => {
+      return buildNewStateAfterAsyncValidation<FIELDS>(oldValues, newState, newError, path);
+    });
+  };
+}
+
+function buildNewStateAfterAsyncValidation<FIELDS>(oldValues: Fields<FIELDS>,newState: State<FIELDS>, newError: string | null, path: string) {
+  //@ts-ignore
   const validating = { ...(newState.validating) };
   //@ts-ignore
   if ((validating[path] as []).length === 0) {
@@ -54,57 +77,22 @@ function getNewStateAfterAsyncValidation<FIELDS>(
   } else {
     validating[path] = [];
   }
-  const newErrors: FormErrors<FIELDS> = {} as FormErrors<FIELDS>;
-  const errorRecorder = createErrorRecorder(newErrors);
-  // first validate the on async field
-  asyncVF(newState.values, errorRecorder);
 
-  // then validate anything else...
-  validate(newState.values,
-    fieldName => (newState.fieldsVisited[fieldName] === true || newState.submitRequested),
-    errorRecorder,
-    // ...omitting anything that should be validated delayed
-    DontValidateAnythingDelayed
-  );
-  return { ...newState, errors: newErrors, validating: validating }
-}
-
-/**
- * Creator function for the ValidateAsync helper function.
- */
-function createValidateDelayed<FIELDS>(
-  currentState: State<FIELDS>,
-  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
-  validate: ValidateFn<FIELDS>
-): ValidateAsync<FIELDS> {
-
-  const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>, path: Path) {
-    if (path) {
-      if (currentState.validating[path] !== undefined) {
-        //@ts-ignore (why could validating[path] be undefined)     
-        currentState.validating[path].push(promise);
-      } else {
-        currentState.validating[path] = [promise];
-      }
-    }
-
-    //@ts-ignore
-    const currentValues = { ...(currentState.values as any) };
-    promise.then(
-      (dvf: AsyncValidatorFunction<FIELDS>) => {
-        setState((newState: State<FIELDS>) => getNewStateAfterAsyncValidation(validate, currentValues, newState, dvf, path))
-      });
+  const newErrors: FormErrors<FIELDS> = newState.errors;
+  if (newError) {
+    newErrors[path] = [newError];
+  } else {
+    delete newErrors[path];
   }
-  return validateAsyncFunction;
+  return { ...newState, validating, errors: newErrors };
 }
-const DontValidateAnythingDelayed: ValidateAsync<any> = (p) => { };
 
 
 type Fields<FIELDS> = { [P in keyof FIELDS]: any };
 type Partial<T> = { [P in keyof T]: T[P] };
 
 type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
-type Validating<FIELDS> = { [P in keyof FIELDS | string]?: Promise<AsyncValidatorFunction<FIELDS>>[] };
+type Validating<FIELDS> = { [P in keyof FIELDS | string]?: Promise<string | null>[] };
 type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
 
 type Path = string;
@@ -122,15 +110,17 @@ export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
  * @param exclusive if true any other previously recorded errors will be overwritten
  * 
  */
-export type RecordError<FIELDS> =
-  (field: keyof FIELDS | string, msg: string, exclusive?: boolean) => void;
+export type RecordError =
+  (field: Path | string, msg: string, exclusive?: boolean) => void;
+export type RecordErrorAsync =
+  (field: Path | string, msg: Promise<string | null>) => void;
 
 /**
 * A function that is called after an asynchronous validation took place. An error recorder and the current value
 * of the validated field is being passed to the function, as the value could have changed while validation was 
 * in progress. Set the error, if after waiting for the async validation, the field is still invalid, in here.
 */
-export type AsyncValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorder: RecordError<FIELDS>) => void;
+export type AsyncValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorder: RecordError) => void;
 /**
  * Registers a promise for an async validation. When the promis resolves the supplies AsyncValidatorFunction is called.
  */
@@ -149,8 +139,8 @@ export type isFieldVisitedFunction<FIELDS> = (fieldName: keyof FIELDS | string) 
 export type ValidateFn<FIELDS> = (
   newValues: Partial<FIELDS>,
   isVisited: isFieldVisitedFunction<FIELDS>,
-  recordError: RecordError<FIELDS>,
-  validateDelayed: ValidateAsync<FIELDS>
+  recordError: RecordError,
+  recordErrorDelayed: RecordErrorAsync
 ) => void;
 
 enum SubmitState {
@@ -189,6 +179,8 @@ export interface Form<FORM_DATA> {
   multi: FormInputFieldPropsProducer<MultiFormInput<any>, any, FORM_DATA>;
   custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any, FORM_DATA>;
 }
+
+
 /**
  * A hook that creates everything that's required for building a form.
  * 
@@ -217,12 +209,12 @@ export function useForm<FORM_DATA>(
   // 
   const doValidation = (currentState: State<FORM_DATA>, allFields: boolean): State<FORM_DATA> => {
     const newErrors: FormErrors<FORM_DATA> = {};
-    const newState = {...currentState, errors: newErrors};
+    const newState = { ...currentState, errors: newErrors };
     validate(
       newState.values,
       fieldName => (currentState.fieldsVisited[fieldName] === true) || (allFields === true),
       createErrorRecorder(newErrors),
-      createValidateDelayed(newState, setState, validate)
+      createAsyncErrorRecorder(newState, setState)
     );
     return newState;
   }
@@ -246,6 +238,7 @@ export function useForm<FORM_DATA>(
    */
   const setValue = (path: Path | keyof FORM_DATA, newValue: any) => {
     setState(currentState => {
+      console.log('old ', state, ' new ', currentState);
       return setValueOnState(path, newValue, currentState);
     })
   }
@@ -290,8 +283,8 @@ export function useForm<FORM_DATA>(
     setState((state) => {
       let newState = doValidation(state, true);
       newState = { ...newState, submitRequested: true, submitState: SubmitState.INVOKE_SUBMIT };
-      const pendingPromises: Promise<AsyncValidatorFunction<any>>[] = []
-      Object.values(state.validating).map((values: Promise<AsyncValidatorFunction<any>>[] | undefined) => {
+      const pendingPromises: Promise<string | null>[] = []
+      Object.values(state.validating).map((values: Promise<string | null>[] | undefined) => {
         if (values) {
           pendingPromises.push(...values);
         }
