@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, SyntheticEvent, useEffect } from "react";
 import { setValueOnObject, getValueFromObject } from './helpers'
+
 
 
 //
@@ -60,7 +61,7 @@ function getNewStateAfterAsyncValidation<FIELDS>(
 
   // then validate anything else...
   validate(newState.values,
-    fieldName => (newState.fieldsVisited[fieldName] === true),
+    fieldName => (newState.fieldsVisited[fieldName] === true || newState.submitRequested),
     errorRecorder,
     // ...omitting anything that should be validated delayed
     DontValidateAnythingDelayed
@@ -72,31 +73,27 @@ function getNewStateAfterAsyncValidation<FIELDS>(
  * Creator function for the ValidateAsync helper function.
  */
 function createValidateDelayed<FIELDS>(
+  currentState: State<FIELDS>,
   setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
   validate: ValidateFn<FIELDS>
 ): ValidateAsync<FIELDS> {
 
   const validateAsyncFunction: ValidateAsync<FIELDS> = function (promise: Promise<AsyncValidatorFunction<FIELDS>>, path: Path) {
-    setState((currentState: State<FIELDS>) => {
-      const newState = { ...currentState };
-      if (path) {
-        if (newState.validating[path] !== undefined) {
-          //@ts-ignore (why could validating[path] be undefined)     
-          newState.validating[path].push(promise);
-        } else {
-          newState.validating[path] = [promise];
-        }
+    if (path) {
+      if (currentState.validating[path] !== undefined) {
+        //@ts-ignore (why could validating[path] be undefined)     
+        currentState.validating[path].push(promise);
+      } else {
+        currentState.validating[path] = [promise];
       }
+    }
 
-
-      //@ts-ignore
-      const currentValues = { ...(newState.values as any) };
-      promise.then(
-        (dvf: AsyncValidatorFunction<FIELDS>) => {
-          setState((newState: State<FIELDS>) => getNewStateAfterAsyncValidation(validate, currentValues, newState, dvf, path))
-        });
-      return newState;
-    });
+    //@ts-ignore
+    const currentValues = { ...(currentState.values as any) };
+    promise.then(
+      (dvf: AsyncValidatorFunction<FIELDS>) => {
+        setState((newState: State<FIELDS>) => getNewStateAfterAsyncValidation(validate, currentValues, newState, dvf, path))
+      });
   }
   return validateAsyncFunction;
 }
@@ -139,6 +136,8 @@ export type AsyncValidatorFunction<FIELDS> = (currentValue: FIELDS, errorRecorde
  */
 export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIELDS>>, fieldname: Path) => void;
 
+export type isFieldVisitedFunction<FIELDS> = (fieldName: keyof FIELDS | string) => boolean;
+
 /**
  * A validator function validates all the forms values.
  * 
@@ -149,17 +148,36 @@ export type ValidateAsync<FIELDS> = (promise: Promise<AsyncValidatorFunction<FIE
  */
 export type ValidateFn<FIELDS> = (
   newValues: Partial<FIELDS>,
-  isVisited: (fieldName: keyof FIELDS | string) => boolean,
+  isVisited: isFieldVisitedFunction<FIELDS>,
   recordError: RecordError<FIELDS>,
   validateDelayed: ValidateAsync<FIELDS>
 ) => void;
+
+enum SubmitState {
+  /**
+   * initial state. no submit activity is going on.
+   */
+  NONE,
+  /**
+   * a submit has been requested by the user. The form is now doing the neccessary checks to submit.
+   */
+  INVOKE_SUBMIT,
+  /**
+   * everyting was ok. The form can be submitted, the users submit action will be invoked.
+   */
+  SUBMITTING
+}
 //
 // useFormHook ########################################################################
 //
 
 interface State<FIELDS> {
   values: Fields<FIELDS>;
-  submitted: boolean;
+  submitRequested: boolean;
+  /**
+   * After a submit is requested, the form is in s
+   */
+  submitState: SubmitState;
   fieldsVisited: FieldsVisited<FIELDS>;
   errors: FormErrors<FIELDS>,
   validating: Validating<FIELDS>
@@ -182,23 +200,31 @@ export interface Form<FORM_DATA> {
 export function useForm<FORM_DATA>(
   validate: ValidateFn<FORM_DATA>,
   fields: Fields<FORM_DATA>,
-  submit: () => void,
+  submit: (values: Fields<FORM_DATA>) => void,
   valueCreators: ValueCreators<FORM_DATA> = {}
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
-  const [state, setState] = useState({ values: fields, submitted: false, fieldsVisited: {}, errors: {}, validating: {} } as State<FORM_DATA>);;
+  const [state, setState] = useState({ values: fields, submitRequested: false, fieldsVisited: {}, errors: {}, validating: {} } as State<FORM_DATA>);;
   let { values, errors } = state;
+  useEffect(() => {
+    if (state.submitState === SubmitState.SUBMITTING) {
+      submit(state.values);
+      setState({ ...state, submitState: SubmitState.NONE });
+    }
+  });
+
   //
   // validation ##############################################################
   // 
-  const doValidation = (currentState: State<FORM_DATA>, allFields: boolean) => {
+  const doValidation = (currentState: State<FORM_DATA>, allFields: boolean): State<FORM_DATA> => {
     const newErrors: FormErrors<FORM_DATA> = {};
+    const newState = {...currentState, errors: newErrors};
     validate(
-      currentState.values,
+      newState.values,
       fieldName => (currentState.fieldsVisited[fieldName] === true) || (allFields === true),
       createErrorRecorder(newErrors),
-      createValidateDelayed(setState, validate)
+      createValidateDelayed(newState, setState, validate)
     );
-    return newErrors;
+    return newState;
   }
 
   //
@@ -225,11 +251,12 @@ export function useForm<FORM_DATA>(
   }
 
   const setValueOnState = (path: Path | keyof FORM_DATA, newValue: any, currentState: State<FORM_DATA>) => {
-    const newState = { ...currentState };
+    let newState = { ...currentState };
     const newValues = Object.assign({}, currentState.values);
     setValueOnObject(path as string, newValues, newValue);
     newState.values = newValues
-    newState.errors = doValidation(newState, state.submitted);
+    newState = doValidation(newState, state.submitRequested);
+    newState.submitState = SubmitState.NONE;
     return newState;
 
   }
@@ -244,23 +271,25 @@ export function useForm<FORM_DATA>(
 
   function setFieldVisited(fieldName: string) {
     setState(currentState => {
-      const newState = { ...currentState };
+      let newState = { ...currentState };
       const newFieldsVisited = {
         // https://stackoverflow.com/a/51193091/6134498
         ...(currentState.fieldsVisited as any),
         [fieldName]: true
       } as FieldsVisited<FORM_DATA>;
       newState.fieldsVisited = newFieldsVisited;
-      newState.errors = doValidation(newState, state.submitted);
+      newState = doValidation(newState, state.submitRequested);
+      newState.submitState = SubmitState.NONE;
       return newState;
     });
 
   }
 
-  function handleSubmit() {
+  function handleSubmit(e: SyntheticEvent) {
+    e.preventDefault();
     setState((state) => {
-      const errors = doValidation(state, true);
-      state = { ...state, submitted: true, errors: errors };
+      let newState = doValidation(state, true);
+      newState = { ...newState, submitRequested: true, submitState: SubmitState.INVOKE_SUBMIT };
       const pendingPromises: Promise<AsyncValidatorFunction<any>>[] = []
       Object.values(state.validating).map((values: Promise<AsyncValidatorFunction<any>>[] | undefined) => {
         if (values) {
@@ -270,14 +299,14 @@ export function useForm<FORM_DATA>(
       Promise.all(pendingPromises).then(x => {
         setState(s => {
           if (Object.keys(s.errors).length === 0) {
-            submit();
+            return { ...s, submitState: SubmitState.SUBMITTING };
           } else {
-            console.log('Errors found, submit aborted ', s.errors);
+            return { ...s, submitState: SubmitState.NONE };
           }
-          return s;
+
         });
       });
-      return { ...state };
+      return { ...newState };
     });
   }
   //
@@ -321,7 +350,8 @@ export function useForm<FORM_DATA>(
       errorMessages: newErrors,
       name: fieldName as string,
       //@ts-ignore (how could state.validating[path] be undefined here?)
-      validating: state.validating[path] !== undefined && state.validating[path].length > 0
+      validating: state.validating[path] !== undefined && state.validating[path].length > 0,
+      submitting: state.submitState === SubmitState.INVOKE_SUBMIT
     };
     return ret;
   }
@@ -364,11 +394,14 @@ export function useForm<FORM_DATA>(
     }
 
   }
+
+
   return [
     // "overall" form state
     {
       hasErrors: Object.keys(errors).length > 0,
       values: values,
+      errors: errors,
       setValue: setValue,
       handleSubmit: handleSubmit
 
@@ -379,6 +412,7 @@ export function useForm<FORM_DATA>(
 
 type OverallState<FIELDS> = {
   hasErrors: boolean;
+  errors: FormErrors<FIELDS>;
   values: Partial<FIELDS>;
   setValue: (field: keyof FIELDS, value: string) => void;
   handleSubmit: () => void;
@@ -388,11 +422,12 @@ type HTMLFocusEventEmitter = (e: React.FocusEvent<HTMLInputElement>) => void;
 type InputEventEmitter = (newValue: any) => void;
 type FocusEventEmitter = () => void;
 type IndexType = { [key: string]: any }
-export interface FormField<T> extends IndexType {
+export interface FormField<T> {
   value: T;
   errorMessages: any;
   name: string;
-  validating: boolean
+  validating: boolean;
+  submitting: boolean;
 }
 /**
 * Properties for HTMLInputFields.
