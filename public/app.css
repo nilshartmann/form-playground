@@ -440,3 +440,7 @@ input:hover {
   width: 2rem;
   margin-right: 1rem;
 }
+.ErrorDisplay {
+  color: red;
+  font-weight: bold;
+}
