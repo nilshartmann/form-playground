@@ -238,7 +238,6 @@ export function useForm<FORM_DATA>(
    */
   const setValue = (path: Path | keyof FORM_DATA, newValue: any) => {
     setState(currentState => {
-      console.log('old ', state, ' new ', currentState);
       return setValueOnState(path, newValue, currentState);
     })
   }
