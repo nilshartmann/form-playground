@@ -31,8 +31,8 @@ const invalidPlzCache: string[] = [];
 const validatePizzaForm: ValidateFn<OrderFormState> = function (
   newFormInput,
   isVisited,
-  recordError: RecordError,
-  recordErrorAsync: RecordErrorAsync
+  recordError: RecordError<OrderFormState>,
+  recordErrorAsync: RecordErrorAsync<OrderFormState>
   ) {
   if (isVisited("vorname") && newFormInput.vorname.length < 3) {
     recordError("vorname", "Der Vorname muss mindestens 3 Zeichen lang sein");
@@ -145,8 +145,8 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>  ) {
 }
 const validatePizza:ValidateFn<Pizza> = (newValues,
   isVisited,
-  recordError: RecordError,
-  recordErrorDelayed: RecordErrorAsync) => {
+  recordError: RecordError<Pizza>,
+  recordErrorDelayed: RecordErrorAsync<Pizza>) => {
     if (isVisited('groesse') && newValues.groesse > 50) {
       recordError('groesse', 'Eine Pizza darf maximal 50 cm groß sein');
     }

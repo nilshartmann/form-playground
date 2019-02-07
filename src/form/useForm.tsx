@@ -1,7 +1,5 @@
 import { useState, SyntheticEvent, useEffect } from "react";
 import { setValueOnObject, getValueFromObject } from './helpers'
-import { promises } from "fs";
-
 
 
 //
@@ -12,7 +10,7 @@ import { promises } from "fs";
  * 
  * @param errors the objects where the errors should be recorded in
  */
-function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError {
+function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FIELDS> {
   return function (field: keyof FIELDS | string, msg: string, exclusive: boolean = false) {
     //TODO Why is that:
     //[ts] Type 'string | keyof FIELDS' cannot be used to index type 'string | FormErrors<FIELDS>'. [2536]
@@ -40,8 +38,8 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError {
 
 
 function createAsyncErrorRecorder<FIELDS>(currentState: State<FIELDS>,
-  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>): RecordErrorAsync {
-  return (path: Path, newErrorPromise: Promise<string | null>) => {
+  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>): RecordErrorAsync<FIELDS> {
+  return (path: Path<FIELDS>, newErrorPromise: Promise<string | null>) => {
     // remeber the prmoise... 
     if (currentState.validating[path] !== undefined) {
       //@ts-ignore (why could validating[path] be undefined)     
@@ -54,7 +52,7 @@ function createAsyncErrorRecorder<FIELDS>(currentState: State<FIELDS>,
 }
 
 function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>, setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
-  path: string): (newError: string | null) => void {
+  path: Path<FIELDS>): (newError: string | null) => void {
   return (newError) => {
     setState((newState) => {
       return buildNewStateAfterAsyncValidation<FIELDS>(oldValues, newState, newError, path);
@@ -62,15 +60,15 @@ function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>, setState: React.Disp
   };
 }
 
-function buildNewStateAfterAsyncValidation<FIELDS>(oldValues: Fields<FIELDS>, newState: State<FIELDS>, newError: string | null, path: string) {
+function buildNewStateAfterAsyncValidation<FIELDS>(oldValues: Fields<FIELDS>, newState: State<FIELDS>, newError: string | null, path: Path<FIELDS>) {
   //@ts-ignore
   const validating = { ...(newState.validating) };
   //@ts-ignore
   if ((validating[path] as []).length === 0) {
     return newState;
   }
-  const oldValue = getValueFromObject(path, oldValues);
-  const newValue = getValueFromObject(path, newState.values);
+  const oldValue = oldValues[path];
+  const newValue = newState.values[path];
   if (newValue !== oldValue) {
     // validated value is obsolete.
     return newState;
@@ -95,7 +93,6 @@ type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
 type Validating<FIELDS> = { [P in keyof FIELDS | string]?: Promise<string | null>[] };
 type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
 
-type Path = string;
 
 /**
  * Each complex element that is used in an array within the form's data model, must be created by a ValueCreator function,
@@ -110,12 +107,15 @@ export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
  * @param exclusive if true any other previously recorded errors will be overwritten
  * 
  */
-export type RecordError =
-  (field: Path | string, msg: string, exclusive?: boolean) => void;
-export type RecordErrorAsync =
-  (field: Path | string, msg: Promise<string | null>) => void;
+export type RecordError<FIELDS> =
+  (field: Path<FIELDS>, msg: string, exclusive?: boolean) => void;
+export type RecordErrorAsync<FIELDS> =
+  (field: Path<FIELDS>, msg: Promise<string | null>) => void;
 
-export type isFieldVisitedFunction<FIELDS> = (fieldName: keyof FIELDS | string) => boolean;
+
+
+
+export type isFieldVisitedFunction<FIELDS> = (fieldName: Path<FIELDS>) => boolean;
 
 /**
  * A validator function validates all the forms values.
@@ -128,8 +128,8 @@ export type isFieldVisitedFunction<FIELDS> = (fieldName: keyof FIELDS | string) 
 export type ValidateFn<FIELDS> = (
   newValues: Partial<FIELDS>,
   isVisited: isFieldVisitedFunction<FIELDS>,
-  recordError: RecordError,
-  recordErrorDelayed: RecordErrorAsync
+  recordError: RecordError<FIELDS>,
+  recordErrorDelayed: RecordErrorAsync<FIELDS>
 ) => void;
 
 enum SubmitState {
@@ -172,16 +172,17 @@ export interface Form<FORM_DATA> {
 enum ValidationState {
   VALIDATING, VALID, INVALID
 }
-type SubFormStateMap = {
-  [P: string]: ValidationState;
+type SubFormStateMap<FORM_DATA> = {
+  [P in Path<FORM_DATA>]?: ValidationState;
 }
+type Path<FORM_DATA> = keyof FORM_DATA;
 
-class SubFormStates {
-  getState(path: string): ValidationState {
+class SubFormStates<FORM_DATA> {
+  getState(path: Path<FORM_DATA>): ValidationState | undefined {
     return this.subFormStateMap[path];
   }
-  private readonly subFormStateMap: SubFormStateMap = {};
-  setSubFormState(name: string, newState: ValidationState) {
+  private readonly subFormStateMap: SubFormStateMap<FORM_DATA> = {};
+  setSubFormState(name: Path<FORM_DATA>, newState: ValidationState) {
     this.subFormStateMap[name] = newState;
   }
   allValid(): boolean {
@@ -190,12 +191,14 @@ class SubFormStates {
     return subFormStates.length === 0 || subFormStates.some((subFormState: ValidationState) => subFormState === ValidationState.VALID);
   }
   setValidating() {
-    Object.keys(this.subFormStateMap).forEach(key => this.subFormStateMap[key] = ValidationState.VALIDATING);
+    Object.keys(this.subFormStateMap).forEach(key => this.subFormStateMap[key as Path<FORM_DATA>] = ValidationState.VALIDATING);
   }
   toString() {
     return '[SubFormState: ' + JSON.stringify(this.subFormStateMap) + ']';
   }
 }
+
+
 
 
 /**
@@ -214,7 +217,7 @@ export function useForm<FORM_DATA>(
   parentForm?: ParentFormAdapter
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
   const [state, setState] = useState({ values: fields, submitRequested: false, fieldsVisited: {}, errors: {}, validating: {} } as State<FORM_DATA>);;
-  const [subFormStates, setSubFormStates] = useState(new SubFormStates());
+  const [subFormStates, setSubFormStates] = useState(new SubFormStates<FORM_DATA>());
   let { values, errors } = state;
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
   console.log(logPrefix, 'useForm called, SubmitState: ', SubmitState[state.submitState])
@@ -273,22 +276,29 @@ export function useForm<FORM_DATA>(
    * sets newValue under path and validates the form afterwards.
    * @param path the path on which the value should be set
    * @param newValue the new value
+   * @param idx when the value at path is an array, the index must be supplied to change just the value at the index.
    */
-  const setValue = (path: Path | keyof FORM_DATA, newValue: any) => {
+  const setValue = (path: Path<FORM_DATA>, newValue: any, idx: number | null = null) => {
     setState(currentState => {
+      const newState = setValueOnState(path, newValue, currentState, idx);
       if (parentForm) {
-        parentForm.onChange(newValue);
+        parentForm.onChange(newState.values);
       }
-      return setValueOnState(path, newValue, currentState);
+      return newState;
+
     })
 
   }
 
-  const setValueOnState = (path: Path | keyof FORM_DATA, newValue: any, currentState: State<FORM_DATA>) => {
+  const setValueOnState = (path: Path<FORM_DATA>, newValue: any, currentState: State<FORM_DATA>, idx: number | null) => {
     let newState = { ...currentState };
-    const newValues = Object.assign({}, currentState.values);
-    setValueOnObject(path as string, newValues, newValue);
-    newState.values = newValues
+    const newValues = Object.assign({}, currentState.values) as FORM_DATA;
+    if (idx !== null) {
+      (newValues[path] as any)[idx] = newValue;
+    } else {
+      newValues[path] = newValue;
+    }
+    newState.values = newValues;
     newState = doValidation(newState, state.submitRequested);
     newState.submitState = SubmitState.NONE;
     return newState;
@@ -355,21 +365,21 @@ export function useForm<FORM_DATA>(
   //
 
 
-  const onMultiFieldRemove = (path: Path, idx: number) => {
+  const onMultiFieldRemove = (path: Path<FORM_DATA>, idx: number) => {
     setState(currentState => {
-      let newArray = (getValueFromObject(path, currentState.values) as []).filter((e, myIdx) => idx !== myIdx);
-      return setValueOnState(path, newArray, currentState);
+      let newArray = (currentState.values[path] as []).filter((e, myIdx) => idx !== myIdx);
+      return setValueOnState(path, newArray, currentState, null);
     })
   }
-  const onMultiAdd = (path: Path) => {
+  const onMultiAdd = (path: Path<FORM_DATA>) => {
     setState(currentState => {
-      const initial: any[] = getValueFromObject(path, currentState.values) as any[];
+      const initial: any[] = currentState.values[path] as any[];
       // TODO das wird noch interessant.....
-      const valueCreator: (() => object) | undefined = getValueFromObject(path, valueCreators);
+      const valueCreator: (() => object) | undefined = valueCreators[path];
       if (valueCreator) {
         const newArray = [...(initial)];
         newArray.push(valueCreator());
-        return setValueOnState(path, newArray, currentState);
+        return setValueOnState(path, newArray, currentState, null);
       } else {
         console.error(`No valueCreator for ${path} was supplied. 
       Adding values is impossible. To change this supply 
@@ -382,14 +392,13 @@ export function useForm<FORM_DATA>(
   // 
   // Construction of return value
   //
-  function createBaseIndividualFields(fieldName: Path): FormField<any> {
-    const path = fieldName as Path;
-    const value = getValueFromObject(path, values);
+  function createBaseIndividualFields(path: Path<FORM_DATA>): FormField<any> {
+    const value = values[path];
     const newErrors = errors[path];
     const ret: FormField<any> = {
       value: value,
       errorMessages: newErrors,
-      name: fieldName as string,
+      name: path as string,
       //@ts-ignore (how could state.validating[path] be undefined here?)
       validating: state.validating[path] !== undefined && state.validating[path].length > 0,
       submitting: state.submitState === SubmitState.INVOKE_SUBMIT
@@ -397,7 +406,7 @@ export function useForm<FORM_DATA>(
     return ret;
   }
 
-  function createArrayFields<ARRAY_CONTENT_TYPE>(path: Path): MultiFormInput<ARRAY_CONTENT_TYPE> {
+  function createArrayFields<ARRAY_CONTENT_TYPE>(path: Path<FORM_DATA>): MultiFormInput<ARRAY_CONTENT_TYPE> {
     const ret = createBaseIndividualFields(path) as MultiFormInput<any>;
     ret.onRemove = (idx: number) => onMultiFieldRemove(path, idx);
     ret.onAdd = () => onMultiAdd(path);
@@ -414,7 +423,8 @@ export function useForm<FORM_DATA>(
 
         },
         onChange: (newValue: ARRAY_CONTENT_TYPE) => {
-          setValue(`${path}[${idx}]`, newValue);
+
+          setValue(path, newValue, idx);
         }
       }
       return newAdapter;
@@ -423,7 +433,7 @@ export function useForm<FORM_DATA>(
     return ret;
   }
 
-  function createCustomFields(path: Path): CustomObjectInput<any> {
+  function createCustomFields(path: Path<FORM_DATA>): CustomObjectInput<any> {
     const ret = createBaseIndividualFields(path) as CustomObjectInput<any>;
 
     ret.onValueChange = (newValue: any) => setValue(path, newValue);
@@ -431,7 +441,7 @@ export function useForm<FORM_DATA>(
     return ret;
   }
 
-  function createInputFields(path: Path): FormFieldInput {
+  function createInputFields(path: Path<FORM_DATA>): FormFieldInput {
     const ret = createBaseIndividualFields(path) as FormFieldInput;
     ret.onChange = updateValues;
     ret.onBlur = updateVisitedFields;
@@ -439,13 +449,13 @@ export function useForm<FORM_DATA>(
     return ret;
 
   }
-  function createForm(data: FORM_DATA, parentPath: Path = ''): Form<FORM_DATA> {
+  function createForm(data: FORM_DATA): Form<FORM_DATA> {
 
     return {
       data: data,
-      custom: (path: keyof FORM_DATA) => createCustomFields(parentPath + path),
-      multi: (path: keyof FORM_DATA) => createArrayFields(parentPath + path),
-      input: (path: keyof FORM_DATA) => createInputFields(parentPath + path)
+      custom: (path: keyof FORM_DATA) => createCustomFields(path),
+      multi: (path: keyof FORM_DATA) => createArrayFields(path),
+      input: (path: keyof FORM_DATA) => createInputFields(path)
     }
 
   }
