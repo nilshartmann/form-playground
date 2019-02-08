@@ -1,6 +1,4 @@
 import { useState, SyntheticEvent, useEffect } from "react";
-import { setValueOnObject, getValueFromObject } from './helpers'
-
 
 //
 // Validation Helpers ###########################################################
@@ -153,9 +151,6 @@ enum SubmitState {
 interface State<FIELDS> {
   values: Fields<FIELDS>;
   submitRequested: boolean;
-  /**
-   * After a submit is requested, the form is in s
-   */
   submitState: SubmitState;
   fieldsVisited: FieldsVisited<FIELDS>;
   errors: FormErrors<FIELDS>,
@@ -170,30 +165,25 @@ export interface Form<FORM_DATA> {
   custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any, FORM_DATA>;
 }
 
-enum ValidationState {
-  VALIDATING, VALID, INVALID
-}
 type SubFormStateMap<FORM_DATA> = {
-  [P in Path<FORM_DATA>]?: ValidationState;
+  [P in Path<FORM_DATA>]?: boolean;
 }
 type Path<FORM_DATA> = keyof FORM_DATA;
 
 class SubFormStates<FORM_DATA> {
-  getState(path: Path<FORM_DATA>): ValidationState | undefined {
+  getState(path: Path<FORM_DATA>): boolean | undefined {
     return this.subFormStateMap[path];
   }
   private readonly subFormStateMap: SubFormStateMap<FORM_DATA> = {};
-  setSubFormState(name: Path<FORM_DATA>, newState: ValidationState) {
-    this.subFormStateMap[name] = newState;
+  setSubFormState(name: Path<FORM_DATA>, valid: boolean) {
+    this.subFormStateMap[name] = valid;
   }
   allValid(): boolean {
     const subFormStates = Object.values(this.subFormStateMap);
 
-    return subFormStates.length === 0 || subFormStates.some((subFormState: ValidationState) => subFormState === ValidationState.VALID);
+    return subFormStates.length === 0 || subFormStates.some((subFormState: boolean) => subFormState === true);
   }
-  setValidating() {
-    Object.keys(this.subFormStateMap).forEach(key => this.subFormStateMap[key as Path<FORM_DATA>] = ValidationState.VALIDATING);
-  }
+
   toString() {
     return '[SubFormState: ' + JSON.stringify(this.subFormStateMap) + ']';
   }
@@ -201,14 +191,19 @@ class SubFormStates<FORM_DATA> {
 
 
 function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<FORM_DATA> {
-  return { values: fields, 
-    submitRequested: false, 
-    fieldsVisited: {}, 
-    errors: {}, 
+  return {
+    values: fields,
+    submitRequested: false,
+    fieldsVisited: {},
+    errors: {},
     validating: {},
     validated: false,
     submitState: SubmitState.NONE
-  } 
+  }
+}
+
+function isValid<FORM_DATA>(state: State<FORM_DATA>): boolean {
+  return Object.keys(state.errors).length === 0 && Object.keys(state.validating).length === 0;
 }
 
 /**
@@ -230,31 +225,19 @@ export function useForm<FORM_DATA>(
   const [subFormStates, setSubFormStates] = useState(new SubFormStates<FORM_DATA>());
   let { values, errors } = state;
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
-  console.log(logPrefix, 'useForm called, SubmitState: ', SubmitState[state.submitState])
   useEffect(() => {
-    console.log(logPrefix, 'SubFormState: ', subFormStates.toString(), ' allValid? ', subFormStates.allValid());
-    if (parentForm !== undefined /*childForm*/) {
-      if (state.submitState === SubmitState.SUBMITTING && parentForm.state === SubmitState.NONE) {
-        setState({ ...state, submitState: SubmitState.NONE });
-      } else if (state.submitState === SubmitState.SUBMITTING && subFormStates.allValid()) {
-        console.log(logPrefix, 'fire Sate Valid');
-        parentForm.onStateChange(ValidationState.VALID);
-      } else if (parentForm.state === SubmitState.INVOKE_SUBMIT &&
-        state.submitState !== SubmitState.INVOKE_SUBMIT
-      ) {
-        console.log(logPrefix, 'Parent form requested submit, fire State Validating');
-        parentForm.onStateChange(ValidationState.VALIDATING);
-        handleSubmit();
-      }
-    } else {
+    if (parentForm === undefined ) {
       if (state.submitState === SubmitState.SUBMITTING && subFormStates.allValid()) {
-        console.log(logPrefix, 'submitting...');
         setState({ ...state, submitState: SubmitState.NONE });
         submit(state.values);
       }
     }
     if (!state.validated) {
-      setState(state => doValidation(state, false));
+      const newState = doValidation(state, false);
+      setState(newState);
+      if (parentForm) {
+        parentForm.onValidChange(isValid(newState));
+      }
     }
   });
 
@@ -312,7 +295,12 @@ export function useForm<FORM_DATA>(
       newValues[path] = newValue;
     }
     newState.values = newValues;
+    const wasValid = isValid(currentState);
     newState = doValidation(newState, state.submitRequested);
+    const isNowValid = isValid(newState);
+    if (parentForm && (wasValid !== isNowValid)) {
+      parentForm.onValidChange(isNowValid);
+    }
     newState.submitState = SubmitState.NONE;
     return newState;
 
@@ -343,17 +331,10 @@ export function useForm<FORM_DATA>(
   }
 
   function handleSubmit(e?: SyntheticEvent) {
-    if (e) {
-      e.preventDefault();
-    }
-    console.log(logPrefix, 'handleSubmit ');
     setState((state) => {
 
       let newState = doValidation(state, true);
       newState = { ...newState, submitRequested: true, submitState: SubmitState.INVOKE_SUBMIT };
-
-      setSubFormStates(sfs => { sfs.setValidating(); return sfs });
-
       const pendingPromises: Promise<string | null>[] = []
       Object.values(state.validating).map((values: Promise<string | null>[] | undefined) => {
         if (values) {
@@ -408,11 +389,12 @@ export function useForm<FORM_DATA>(
   function createBaseIndividualFields(path: Path<FORM_DATA>): FormField<any> {
     const value = values[path];
     const newErrors = errors[path];
+    const submitRequested = (parentForm && parentForm.submitRequested) || state.submitRequested; 
     const ret: FormField<any> = {
       value: value,
       errorMessages: newErrors,
       name: path as string,
-      visited: state.fieldsVisited[path] !== undefined || state.submitRequested,
+      visited: state.fieldsVisited[path] !== undefined || submitRequested,
       //@ts-ignore (how could state.validating[path] be undefined here?)
       validating: state.validating[path] !== undefined && state.validating[path].length > 0,
       submitting: state.submitState === SubmitState.INVOKE_SUBMIT
@@ -429,15 +411,11 @@ export function useForm<FORM_DATA>(
     ret.getParentFormAdapter = (idx: number) => {
       const newAdapter: ParentFormAdapter = {
         state: state.submitState,
-        onStateChange: (newState) => {
-          console.log(logPrefix, 'onStateChange ', ValidationState[newState], (parentForm === undefined));
-          if (subFormStates.getState(path) !== newState) {
-            setSubFormStates(sfs => { sfs.setSubFormState(path, newState); return sfs });
-          }
-
+        submitRequested: state.submitRequested,
+        onValidChange: (newValid: boolean) => {
+          setSubFormStates(sfs => { sfs.setSubFormState(path, newValid); return sfs; });
         },
         onChange: (newValue: ARRAY_CONTENT_TYPE) => {
-
           setValue(path, newValue, idx);
         }
       }
@@ -478,6 +456,7 @@ export function useForm<FORM_DATA>(
     values: values,
     errors: errors,
     setValue: setValue,
+    submitRequested: state.submitRequested,
     handleSubmit: handleSubmit
   }
 
@@ -490,6 +469,7 @@ export function useForm<FORM_DATA>(
 
 type OverallState<FIELDS> = {
   hasErrors: boolean;
+  submitRequested: boolean;
   errors: FormErrors<FIELDS>;
   values: Partial<FIELDS>;
   setValue: (field: keyof FIELDS, value: string) => void;
@@ -538,7 +518,8 @@ export type FormInputFieldPropsProducer<R extends FormField<T>, T extends IndexT
 
 export interface ParentFormAdapter {
   state: SubmitState;
-  onStateChange: (newState: ValidationState) => void;
+  submitRequested: boolean;
+  onValidChange: (valid: boolean) => void;
   onChange: (newValue: any) => void
 }
 

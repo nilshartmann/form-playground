@@ -6,7 +6,7 @@ import { Input } from "./form/Input";
 import { isEqual } from "lodash";
 
 // Form Logic
-import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError,RecordErrorAsync, CustomObjectInput, ParentFormAdapter } from "./form/useForm";
+import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, RecordErrorAsync, CustomObjectInput, ParentFormAdapter } from "./form/useForm";
 
 interface Drink {
   name: string;
@@ -33,8 +33,8 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   isVisited,
   recordError: RecordError<OrderFormState>,
   recordErrorAsync: RecordErrorAsync<OrderFormState>
-  ) {
-  if ( newFormInput.vorname.length < 3) {
+) {
+  if (newFormInput.vorname.length < 3) {
     recordError("vorname", "Der Vorname muss mindestens 3 Zeichen lang sein");
   }
 
@@ -42,50 +42,52 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     recordError("nachname", "Der Nachname muss mindestens 3 Zeichen lang sein");
   }
 
-    if (newFormInput.vorname.length >= newFormInput.nachname.length) {
-      recordError("nachname", "Vorname muss kürzer als Nachname sein");
-    }
+  if (newFormInput.vorname.length >= newFormInput.nachname.length) {
+    recordError("nachname", "Vorname muss kürzer als Nachname sein");
+  }
   if (newFormInput.plz.length != 5) {
-    recordError("plz", "Postleitzahlen müssen fünf Ziffern haben" , true);
+    recordError("plz", "Postleitzahlen müssen fünf Ziffern haben", true);
   } else {
-    if ( invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
+    if (invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
       recordError("plz", "Postleitzahl nicht im Liefergebiet (cached)", true);
-    } else if ( plzCache.indexOf(newFormInput.plz) === -1) {
+    } else if (plzCache.indexOf(newFormInput.plz) === -1) {
       const durationString = newFormInput.plz.charAt(4);
-      const duration:number = (/[0-9]{1}/.test(durationString) ? +durationString : 5) * 1000;
+      const duration: number = (/[0-9]{1}/.test(durationString) ? +durationString : 5) * 1000;
 
-      const validation = async () =>  {
-        let fakeResponse = ['22305', '22159','22300', '22761', '22222'].indexOf(newFormInput.plz) === -1;
-        let invalid = await fetchMock(fakeResponse,duration);
+      const validation = async () => {
+        //        let fakeResponse = !newFormInput.plz.startsWith('22');
+        let fakeResponse = ['22305', '22159', '22300', '22761', '22222'].indexOf(newFormInput.plz) === -1;
+
+        let invalid = await fetchMock(fakeResponse, duration);
         if (invalid) {
           invalidPlzCache.push(newFormInput.plz);
-          return "Postleitzahl nicht im Liefergebiet";         
+          return "Postleitzahl nicht im Liefergebiet";
         } else {
           plzCache.push(newFormInput.plz);
-          return null;    
+          return null;
         }
       }
 
       recordErrorAsync("plz", validation());
-            
-    
+
+
     }
   }
 
   if (newFormInput.pizzen.length === 0) {
     recordError('pizzen', 'Es muss mindestens eine Pizza bestellt werden');
   }
-/*  newFormInput.pizzen.forEach((pizza, idx) => {
-    if (isVisited(`pizzen[${idx}].groesse`) && pizza.groesse > 50) {
-      recordError(`pizzen[${idx}].groesse`, 'Eine Pizza darf maximal 50 cm groß sein');
-    }
-  });
-*/
+  /*  newFormInput.pizzen.forEach((pizza, idx) => {
+      if (isVisited(`pizzen[${idx}].groesse`) && pizza.groesse > 50) {
+        recordError(`pizzen[${idx}].groesse`, 'Eine Pizza darf maximal 50 cm groß sein');
+      }
+    });
+  */
 }
 
 
-function fetchMock<T>(response: T, timeout: number):Promise<T> {
-  console.log('simulating an answer in '  + timeout + ' ms');
+function fetchMock<T>(response: T, timeout: number): Promise<T> {
+  console.log('simulating an answer in ' + timeout + ' ms');
   return new Promise((res) => window.setTimeout(() => res(response), timeout));
 }
 
@@ -101,7 +103,7 @@ const valueCreators: ValueCreators<OrderFormState> = {
 }
 
 interface OrderFormProps {
-  submit: (values:OrderFormState) => void;
+  submit: (values: OrderFormState) => void;
 }
 
 export default function OrderForm(props: OrderFormProps) {
@@ -110,6 +112,7 @@ export default function OrderForm(props: OrderFormProps) {
   console.log('errors', overallFormState.errors);
   return (
     <div className="Form">
+
       <Input label="Vorname" {...input('vorname')} />
       <Input label="Nachname" {...input('nachname')} />
       <Input label="PLZ" {...input('plz')} />
@@ -120,8 +123,8 @@ export default function OrderForm(props: OrderFormProps) {
       <button onClick={() => console.log(overallFormState.values)}>
         Show Form State
       </button>
-      <MultiPizzaEditor {...multi('pizzen')}  />
-      <button disabled={overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
+      <MultiPizzaEditor {...multi('pizzen')} />
+      <button disabled={overallFormState.submitRequested && overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
         Bestellen !
       </button>
     </div>
@@ -130,7 +133,7 @@ export default function OrderForm(props: OrderFormProps) {
 
 
 
-function MultiPizzaEditor(props: MultiFormInput<Pizza>  ) {
+function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
   return <div>
     <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
     {
@@ -141,24 +144,24 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>  ) {
     <ErrorDisplay visited={props.visited} errorMessages={props.errorMessages} />
   </div>
 }
-const validatePizza:ValidateFn<Pizza> = (newValues,
+const validatePizza: ValidateFn<Pizza> = (newValues,
   isVisited,
   recordError: RecordError<Pizza>,
   recordErrorDelayed: RecordErrorAsync<Pizza>) => {
-    if (isVisited('groesse') && newValues.groesse > 50) {
-      recordError('groesse', 'Eine Pizza darf maximal 50 cm groß sein');
-    }
-} 
+  if (newValues.groesse > 50) {
+    recordError('groesse', 'Eine Pizza darf maximal 50 cm groß sein');
+  }
+}
 
 interface PizzaEditorProps {
   parentForm: ParentFormAdapter,
-  id: number, 
-  count: number, 
+  id: number,
+  count: number,
   onRemove: (idx: number) => void
 }
 function PizzaEditor(props: PizzaEditorProps) {
   const initalPizza = { groesse: 60, belaege: [] }
-  const [overallFormState, form] = useForm<Pizza>(validatePizza, initalPizza, () => {}, {}, props.parentForm);
+  const [overallFormState, form] = useForm<Pizza>(validatePizza, initalPizza, () => { }, {}, props.parentForm);
   const { input, multi, custom } = form;
 
   return <div>
