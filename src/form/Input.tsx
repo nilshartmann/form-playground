@@ -9,16 +9,17 @@ interface InputProps
   label: string;
   errorMessages?: string[];
   validating: boolean;
+  visited: boolean;
   initialValue?: string;
 }
 /** We could use native input but for styling we use our own component */
-export function Input({ label, errorMessages, validating, initialValue, ...attrs }: InputProps) {
+export function Input({ label, errorMessages, validating, visited, initialValue, ...attrs }: InputProps) {
   return (
     <div className="FormGroup">
       <label>{label}
       <input type='text' defaultValue={initialValue} {...attrs} />
       </label>
-      <ErrorDisplay errorMessages={errorMessages} />
+      <ErrorDisplay visited={visited} errorMessages={errorMessages} />
       <div>{validating ? 'validating...' : ''}</div>
     </div>
   );

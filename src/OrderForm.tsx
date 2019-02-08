@@ -34,25 +34,23 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   recordError: RecordError<OrderFormState>,
   recordErrorAsync: RecordErrorAsync<OrderFormState>
   ) {
-  if (isVisited("vorname") && newFormInput.vorname.length < 3) {
+  if ( newFormInput.vorname.length < 3) {
     recordError("vorname", "Der Vorname muss mindestens 3 Zeichen lang sein");
   }
 
-  if (isVisited("nachname") && newFormInput.nachname.length < 3) {
+  if (newFormInput.nachname.length < 3) {
     recordError("nachname", "Der Nachname muss mindestens 3 Zeichen lang sein");
   }
 
-  if (isVisited("vorname") && isVisited("nachname")) {
     if (newFormInput.vorname.length >= newFormInput.nachname.length) {
       recordError("nachname", "Vorname muss kürzer als Nachname sein");
     }
-  }
-  if (isVisited('plz') && newFormInput.plz.length != 5) {
+  if (newFormInput.plz.length != 5) {
     recordError("plz", "Postleitzahlen müssen fünf Ziffern haben" , true);
   } else {
-    if (isVisited('plz') && invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
+    if ( invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
       recordError("plz", "Postleitzahl nicht im Liefergebiet (cached)", true);
-    } else if (isVisited('plz') && plzCache.indexOf(newFormInput.plz) === -1) {
+    } else if ( plzCache.indexOf(newFormInput.plz) === -1) {
       const durationString = newFormInput.plz.charAt(4);
       const duration:number = (/[0-9]{1}/.test(durationString) ? +durationString : 5) * 1000;
 
@@ -74,7 +72,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
     }
   }
 
-  if (isVisited('pizzen') && newFormInput.pizzen.length === 0) {
+  if (newFormInput.pizzen.length === 0) {
     recordError('pizzen', 'Es muss mindestens eine Pizza bestellt werden');
   }
 /*  newFormInput.pizzen.forEach((pizza, idx) => {
@@ -140,7 +138,7 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>  ) {
         <PizzaEditor parentForm={props.getParentFormAdapter(idx)} key={idx} count={props.value.length} id={idx} onRemove={props.onRemove} />
       )
     }
-    <ErrorDisplay errorMessages={props.errorMessages} />
+    <ErrorDisplay visited={props.visited} errorMessages={props.errorMessages} />
   </div>
 }
 const validatePizza:ValidateFn<Pizza> = (newValues,

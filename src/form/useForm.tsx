@@ -159,7 +159,8 @@ interface State<FIELDS> {
   submitState: SubmitState;
   fieldsVisited: FieldsVisited<FIELDS>;
   errors: FormErrors<FIELDS>,
-  validating: Validating<FIELDS>
+  validating: Validating<FIELDS>,
+  validated: boolean
 }
 
 export interface Form<FORM_DATA> {
@@ -199,7 +200,16 @@ class SubFormStates<FORM_DATA> {
 }
 
 
-
+function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<FORM_DATA> {
+  return { values: fields, 
+    submitRequested: false, 
+    fieldsVisited: {}, 
+    errors: {}, 
+    validating: {},
+    validated: false,
+    submitState: SubmitState.NONE
+  } 
+}
 
 /**
  * A hook that creates everything that's required for building a form.
@@ -216,7 +226,7 @@ export function useForm<FORM_DATA>(
   valueCreators: ValueCreators<FORM_DATA> = {},
   parentForm?: ParentFormAdapter
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
-  const [state, setState] = useState({ values: fields, submitRequested: false, fieldsVisited: {}, errors: {}, validating: {} } as State<FORM_DATA>);;
+  const [state, setState] = useState(createInitialState(fields));
   const [subFormStates, setSubFormStates] = useState(new SubFormStates<FORM_DATA>());
   let { values, errors } = state;
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
@@ -243,6 +253,9 @@ export function useForm<FORM_DATA>(
         submit(state.values);
       }
     }
+    if (!state.validated) {
+      setState(state => doValidation(state, false));
+    }
   });
 
   //
@@ -250,7 +263,7 @@ export function useForm<FORM_DATA>(
   // 
   const doValidation = (currentState: State<FORM_DATA>, allFields: boolean): State<FORM_DATA> => {
     const newErrors: FormErrors<FORM_DATA> = {};
-    const newState = { ...currentState, errors: newErrors };
+    const newState = { ...currentState, errors: newErrors, validated: true };
     validate(
       newState.values,
       fieldName => (currentState.fieldsVisited[fieldName] === true) || (allFields === true),
@@ -399,6 +412,7 @@ export function useForm<FORM_DATA>(
       value: value,
       errorMessages: newErrors,
       name: path as string,
+      visited: state.fieldsVisited[path] !== undefined || state.submitRequested,
       //@ts-ignore (how could state.validating[path] be undefined here?)
       validating: state.validating[path] !== undefined && state.validating[path].length > 0,
       submitting: state.submitState === SubmitState.INVOKE_SUBMIT
@@ -492,6 +506,7 @@ export interface FormField<T> {
   name: string;
   validating: boolean;
   submitting: boolean;
+  visited: boolean;
 }
 /**
 * Properties for HTMLInputFields.
