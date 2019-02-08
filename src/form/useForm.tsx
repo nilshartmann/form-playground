@@ -165,23 +165,23 @@ export interface Form<FORM_DATA> {
   custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any, FORM_DATA>;
 }
 
-type SubFormStateMap<FORM_DATA> = {
-  [P in Path<FORM_DATA>]?: boolean;
+type SubFormStateMap = {
+  [P: string]: boolean;
 }
 type Path<FORM_DATA> = keyof FORM_DATA;
 
-class SubFormStates<FORM_DATA> {
-  getState(path: Path<FORM_DATA>): boolean | undefined {
+class SubFormStates {
+  getState(path: string): boolean | undefined {
     return this.subFormStateMap[path];
   }
-  private readonly subFormStateMap: SubFormStateMap<FORM_DATA> = {};
-  setSubFormState(name: Path<FORM_DATA>, valid: boolean) {
+  private readonly subFormStateMap: SubFormStateMap = {};
+  setSubFormState(name: string, valid: boolean) {
     this.subFormStateMap[name] = valid;
   }
   allValid(): boolean {
     const subFormStates = Object.values(this.subFormStateMap);
 
-    return subFormStates.length === 0 || subFormStates.some((subFormState: boolean) => subFormState === true);
+    return subFormStates.length === 0 || !subFormStates.some((subFormState: boolean) => subFormState === false);
   }
 
   toString() {
@@ -222,7 +222,7 @@ export function useForm<FORM_DATA>(
   parentForm?: ParentFormAdapter
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
   const [state, setState] = useState(createInitialState(fields));
-  const [subFormStates, setSubFormStates] = useState(new SubFormStates<FORM_DATA>());
+  const [subFormStates, setSubFormStates] = useState(new SubFormStates());
   let { values, errors } = state;
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
   useEffect(() => {
@@ -413,8 +413,9 @@ export function useForm<FORM_DATA>(
         state: state.submitState,
         submitRequested: state.submitRequested,
         onValidChange: (newValid: boolean) => {
-          setSubFormStates(sfs => { sfs.setSubFormState(path, newValid); return sfs; });
-        },
+          console.log('setting ' + (path as string + idx) + ' to ' + newValid);
+          setSubFormStates(sfs => { sfs.setSubFormState(path as string + idx, newValid); return sfs; });
+        }, 
         onChange: (newValue: ARRAY_CONTENT_TYPE) => {
           setValue(path, newValue, idx);
         }
