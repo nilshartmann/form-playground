@@ -24,19 +24,6 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FI
   };
 }
 
-
-
-
-
-// /**
-//  * 
-//  * Computes the new state of the Form after an async validation.
-//  * 
-//  * @param validate the form's validator function
-//  * @param newState the current state of the form
-//  * @param asyncVF an async validator function
-//  */
-
 function createAsyncErrorRecorder<FIELDS>(currentState: State<FIELDS>,
   setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
   subFormStates: SubFormStates,
@@ -73,10 +60,6 @@ function buildNewStateAfterAsyncValidation<FIELDS>(
   subFormStates: SubFormStates,
   parentForm?: ParentFormAdapter
   ) {
-  
-  
-
-  
     //@ts-ignore
   const validating = { ...(currentState.validating) };
   //@ts-ignore
@@ -250,7 +233,6 @@ export function useForm<FORM_DATA>(
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
   const [state, setState] = useState(createInitialState(fields));
   const [subFormStates, setSubFormStates] = useState(new SubFormStates());
-  let { values, errors } = state;
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
   useEffect(() => {
     if (parentForm === undefined ) {
@@ -414,8 +396,8 @@ export function useForm<FORM_DATA>(
   // Construction of return value
   //
   function createBaseIndividualFields(path: Path<FORM_DATA>): FormField<any> {
-    const value = values[path];
-    const newErrors = errors[path];
+    const value = state.values[path];
+    const newErrors = state.errors[path];
     const submitRequested = (parentForm && parentForm.submitRequested) || state.submitRequested; 
     const ret: FormField<any> = {
       value: value,
@@ -443,9 +425,6 @@ export function useForm<FORM_DATA>(
               parentForm.onValidChange(isValid(state) && sfs.allValid());
             }
             return sfs;
-          
-          //parent informieren!
-          
           });
         }, 
         onChange: (newValue: TYPE) => {
@@ -490,9 +469,9 @@ export function useForm<FORM_DATA>(
 
   }
   const overallFormState: OverallState<FORM_DATA> = {
-    hasErrors: Object.keys(errors).length > 0,
-    values: values,
-    errors: errors,
+    hasErrors: Object.keys(state.errors).length > 0,
+    values: state.values,
+    errors: state.errors,
     setValue: setValue,
     submitRequested: state.submitRequested,
     handleSubmit: handleSubmit
@@ -501,7 +480,7 @@ export function useForm<FORM_DATA>(
   return [
     // "overall" form state
     overallFormState,
-    createForm(values)
+    createForm(state.values)
   ] as [OverallState<FORM_DATA>, Form<FORM_DATA>];
 }
 
