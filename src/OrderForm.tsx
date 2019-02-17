@@ -6,7 +6,7 @@ import { Input } from "./form/Input";
 import { isEqual } from "lodash";
 
 // Form Logic
-import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, RecordErrorAsync, CustomObjectInput, ParentFormAdapter } from "./form/useForm";
+import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, RecordErrorAsync, CustomObjectInput, ParentFormAdapter, isFieldVisitedFunction } from "./form/useForm";
 
 interface Drink {
   name: string;
@@ -24,6 +24,7 @@ interface OrderFormState {
 interface Pizza {
   groesse: number;
   belaege: string[];
+  pizzadetails: {};
 }
 const plzCache: string[] = [];
 const invalidPlzCache: string[] = [];
@@ -160,18 +161,70 @@ interface PizzaEditorProps {
   onRemove: (idx: number) => void
 }
 function PizzaEditor(props: PizzaEditorProps) {
-  const initalPizza = { groesse: 60, belaege: [] }
+  const initalPizza = { groesse: 60, belaege: [], pizzadetails: {} }
   const [overallFormState, form] = useForm<Pizza>(validatePizza, initalPizza, () => { }, {}, props.parentForm);
   const { input, multi, custom } = form;
-
+  //
   return <div>
     <Input label="Größe" {...input('groesse')} />
     <BelagEditor {...custom('belaege')} />
+    <PizzaDetailsEditor parentForm={form.getParentFormAdapter('pizzadetails')} />
+
     <button onClick={() => props.onRemove(props.id)} >entfernen</button>
 
   </div>
 }
 
+interface PizzaDetailsProps {
+  parentForm: ParentFormAdapter;
+}
+interface PizzaDetails {
+  sauce: string;
+  gutscheincode: string;
+}
+async function validatePizzaDetails(newValues: PizzaDetails,
+  isVisited: isFieldVisitedFunction<PizzaDetails>,
+  recordError: RecordError<PizzaDetails>,
+  recordErrorDelayed: RecordErrorAsync<PizzaDetails>) {
+  if (newValues.gutscheincode.length > 0) {
+    if (newValues.gutscheincode.length < 3) {
+      recordError('gutscheincode', 'Muss immer mindestens drei Zeichen lang sein');
+    } else {
+      const validation = async () => {
+        let invalid = await fetchMock(newValues.gutscheincode.startsWith('a'), 9000);
+        if (invalid) {
+          return 'Gutscheincode nicht ok';
+        }
+        return null;
+      }
+      return recordErrorDelayed('gutscheincode', validation());
+
+    }
+  }
+}
+
+function PizzaDetailsEditor(props: PizzaDetailsProps) {
+  const initalPizzaDetails: PizzaDetails = { sauce: 'Classic', gutscheincode: '' };
+  const [overallFormState, form] = useForm<PizzaDetails>(validatePizzaDetails, initalPizzaDetails, () => { }, {}, props.parentForm);
+  const { input, multi, custom } = form;
+  const sauceInput = input('sauce');
+  return <div>
+    <Input label="Gutscheincode" {...input('gutscheincode')} />
+
+    <div className="FormGroup">
+      <label>Sauce
+        <select name='sauce' onBlur={sauceInput.onBlur} onChange={sauceInput.onChange}>
+          <option value='BBQ'>BBQ</option>
+          <option value='Classic'>Classic</option>
+          <option value='Hollandaise'>Hollandaise</option>
+        </select>
+      </label>
+      <ErrorDisplay visited={sauceInput.visited} errorMessages={sauceInput.errorMessages} />
+      <div>{sauceInput.validating ? 'validating...' : ''}</div>
+    </div>
+    {JSON.stringify(overallFormState.errors)}
+  </div>
+}
 
 
 

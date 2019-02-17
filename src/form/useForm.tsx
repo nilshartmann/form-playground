@@ -25,6 +25,9 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FI
 }
 
 
+
+
+
 // /**
 //  * 
 //  * Computes the new state of the Form after an async validation.
@@ -34,9 +37,10 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FI
 //  * @param asyncVF an async validator function
 //  */
 
-
 function createAsyncErrorRecorder<FIELDS>(currentState: State<FIELDS>,
-  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>): RecordErrorAsync<FIELDS> {
+  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
+  subFormStates: SubFormStates,
+  parentForm?: ParentFormAdapter): RecordErrorAsync<FIELDS> {
   return (path: Path<FIELDS>, newErrorPromise: Promise<string | null>) => {
     // remeber the prmoise... 
     if (currentState.validating[path] !== undefined) {
@@ -45,42 +49,63 @@ function createAsyncErrorRecorder<FIELDS>(currentState: State<FIELDS>,
     } else {
       currentState.validating[path] = [newErrorPromise];
     }
-    newErrorPromise.then(applyErrorAsync<FIELDS>(currentState.values, setState, path));
+    newErrorPromise.then(applyErrorAsync<FIELDS>(currentState.values, setState, path, subFormStates, parentForm));
   };
 }
 
-function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>, setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
-  path: Path<FIELDS>): (newError: string | null) => void {
+function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>, 
+  setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
+  path: Path<FIELDS>,
+  subFormStates: SubFormStates,
+  parentForm?: ParentFormAdapter
+  ): (newError: string | null) => void {
   return (newError) => {
     setState((newState) => {
-      return buildNewStateAfterAsyncValidation<FIELDS>(oldValues, newState, newError, path);
+      return buildNewStateAfterAsyncValidation<FIELDS>(oldValues, newState, newError, path, subFormStates, parentForm);
     });
   };
 }
 
-function buildNewStateAfterAsyncValidation<FIELDS>(oldValues: Fields<FIELDS>, newState: State<FIELDS>, newError: string | null, path: Path<FIELDS>) {
+function buildNewStateAfterAsyncValidation<FIELDS>(
+  oldValues: Fields<FIELDS>, 
+  currentState: State<FIELDS>, 
+  newError: string | null, path: Path<FIELDS>,
+  subFormStates: SubFormStates,
+  parentForm?: ParentFormAdapter
+  ) {
+  
+  
+
+  
+    //@ts-ignore
+  const validating = { ...(currentState.validating) };
   //@ts-ignore
-  const validating = { ...(newState.validating) };
-  //@ts-ignore
-  if ((validating[path] as []).length === 0) {
-    return newState;
+  if (!validating[path]) {
+    return currentState;
   }
+  const wasValid = isValid(currentState) && subFormStates.allValid();
+
   const oldValue = oldValues[path];
-  const newValue = newState.values[path];
+  const newValue = currentState.values[path];
   if (newValue !== oldValue) {
     // validated value is obsolete.
-    return newState;
+    return currentState;
   } else {
-    validating[path] = [];
+    delete(validating[path]);
   }
 
-  const newErrors: FormErrors<FIELDS> = newState.errors;
+  const newErrors: FormErrors<FIELDS> = currentState.errors;
   if (newError) {
     newErrors[path] = [newError];
   } else {
     delete newErrors[path];
   }
-  return { ...newState, validating, errors: newErrors };
+  const newState = { ...currentState, validating, errors: newErrors };
+  const isNowValid = isValid(newState) && subFormStates.allValid();
+  if (parentForm && (wasValid !== isNowValid)) {
+    parentForm.onValidChange(isNowValid );
+  }
+  return newState;
 }
 
 
@@ -163,6 +188,7 @@ export interface Form<FORM_DATA> {
   input: FormInputFieldPropsProducer<FormFieldInput, any, FORM_DATA>;
   multi: FormInputFieldPropsProducer<MultiFormInput<any>, any, FORM_DATA>;
   custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any, FORM_DATA>;
+  getParentFormAdapter: (key:keyof FORM_DATA) => ParentFormAdapter;
 }
 
 type SubFormStateMap = {
@@ -203,7 +229,8 @@ function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<FORM_DA
 }
 
 function isValid<FORM_DATA>(state: State<FORM_DATA>): boolean {
-  return Object.keys(state.errors).length === 0 && Object.keys(state.validating).length === 0;
+  const ret = Object.keys(state.errors).length === 0 && Object.keys(state.validating).length === 0 ;
+  return ret;
 }
 
 /**
@@ -251,7 +278,7 @@ export function useForm<FORM_DATA>(
       newState.values,
       fieldName => (currentState.fieldsVisited[fieldName] === true) || (allFields === true),
       createErrorRecorder(newErrors),
-      createAsyncErrorRecorder(newState, setState)
+      createAsyncErrorRecorder(newState, setState, subFormStates, parentForm)
     );
     return newState;
   }
@@ -264,7 +291,7 @@ export function useForm<FORM_DATA>(
    * Helper to update field values from ChangeEvents.
    * @param param a change Event
    */
-  function updateValues({ currentTarget }: React.ChangeEvent<HTMLInputElement>): void {
+  function updateValues({ currentTarget }: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>): void {
     setValue(currentTarget.name as keyof FORM_DATA, currentTarget.value);
   }
 
@@ -295,11 +322,11 @@ export function useForm<FORM_DATA>(
       newValues[path] = newValue;
     }
     newState.values = newValues;
-    const wasValid = isValid(currentState);
+    const wasValid = isValid(currentState) && subFormStates.allValid();
     newState = doValidation(newState, state.submitRequested);
-    const isNowValid = isValid(newState);
+    const isNowValid = isValid(newState) && subFormStates.allValid();
     if (parentForm && (wasValid !== isNowValid)) {
-      parentForm.onValidChange(isNowValid);
+      parentForm.onValidChange(isNowValid );
     }
     newState.submitState = SubmitState.NONE;
     return newState;
@@ -310,7 +337,7 @@ export function useForm<FORM_DATA>(
    * Helper to update the list of visited fields after a BlurEvents.
    * @param param a blur Event
    */
-  function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement>): void {
+  function updateVisitedFields({ currentTarget }: React.FocusEvent<HTMLInputElement | HTMLSelectElement>): void {
     setFieldVisited(currentTarget.name);
   }
 
@@ -402,33 +429,42 @@ export function useForm<FORM_DATA>(
     return ret;
   }
 
-  function createArrayFields<ARRAY_CONTENT_TYPE>(path: Path<FORM_DATA>): MultiFormInput<ARRAY_CONTENT_TYPE> {
-    const ret = createBaseIndividualFields(path) as MultiFormInput<any>;
-    ret.onRemove = (idx: number) => onMultiFieldRemove(path, idx);
-    ret.onAdd = () => onMultiAdd(path);
-
-
-    ret.getParentFormAdapter = (idx: number) => {
+  function getParentFormAdapterInternal<TYPE>(path: Path<FORM_DATA>, idx: number|null) {
       const newAdapter: ParentFormAdapter = {
         state: state.submitState,
-        submitRequested: state.submitRequested,
+        submitRequested: state.submitRequested || (parentForm !== undefined && parentForm.submitRequested),
         onValidChange: (newValid: boolean) => {
-          console.log('setting ' + (path as string + idx) + ' to ' + newValid);
-          setSubFormStates(sfs => { sfs.setSubFormState(path as string + idx, newValid); return sfs; });
+          const idxString = idx===null ? '':idx;
+          setSubFormStates(sfs => { 
+            const oldState = sfs.allValid();
+            sfs.setSubFormState(path as string + idxString, newValid); 
+            const newState = sfs.allValid();
+            if (parentForm && oldState !== newState) {
+              parentForm.onValidChange(isValid(state) && sfs.allValid());
+            }
+            return sfs;
+          
+          //parent informieren!
+          
+          });
         }, 
-        onChange: (newValue: ARRAY_CONTENT_TYPE) => {
+        onChange: (newValue: TYPE) => {
           setValue(path, newValue, idx);
         }
       }
       return newAdapter;
     };
 
+  function createArrayFields<ARRAY_CONTENT_TYPE>(path: Path<FORM_DATA>): MultiFormInput<ARRAY_CONTENT_TYPE> {
+    const ret = createBaseIndividualFields(path) as MultiFormInput<any>;
+    ret.onRemove = (idx: number) => onMultiFieldRemove(path, idx);
+    ret.onAdd = () => onMultiAdd(path);
+    ret.getParentFormAdapter = (idx: number) => getParentFormAdapterInternal<ARRAY_CONTENT_TYPE>(path, idx);
     return ret;
   }
 
   function createCustomFields(path: Path<FORM_DATA>): CustomObjectInput<any> {
     const ret = createBaseIndividualFields(path) as CustomObjectInput<any>;
-
     ret.onValueChange = (newValue: any) => setValue(path, newValue);
     ret.onBlurChange = () => setFieldVisited(path as string);
     return ret;
@@ -448,7 +484,8 @@ export function useForm<FORM_DATA>(
       data: data,
       custom: (path: keyof FORM_DATA) => createCustomFields(path),
       multi: (path: keyof FORM_DATA) => createArrayFields(path),
-      input: (path: keyof FORM_DATA) => createInputFields(path)
+      input: (path: keyof FORM_DATA) => createInputFields(path),
+      getParentFormAdapter: (path: keyof FORM_DATA) => getParentFormAdapterInternal(path, null)
     }
 
   }
@@ -476,8 +513,8 @@ type OverallState<FIELDS> = {
   setValue: (field: keyof FIELDS, value: string) => void;
   handleSubmit: (e: SyntheticEvent) => void;
 };
-type HTMLInputEventEmitter = (e: React.ChangeEvent<HTMLInputElement>) => void;
-type HTMLFocusEventEmitter = (e: React.FocusEvent<HTMLInputElement>) => void;
+type HTMLInputEventEmitter = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+type HTMLFocusEventEmitter = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => void;
 type InputEventEmitter = (newValue: any) => void;
 type FocusEventEmitter = () => void;
 type IndexType = { [key: string]: any }
