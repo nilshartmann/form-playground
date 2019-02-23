@@ -100,7 +100,7 @@ const initialValues: OrderFormState = {
   drinks: []
 };
 const valueCreators: ValueCreators<OrderFormState> = {
-  pizzen: () => { return { groesse: 60, belaege: [] } }
+  pizzen: () => { return { groesse: 50, belaege: [] } }
 }
 
 interface OrderFormProps {
@@ -139,7 +139,7 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
     <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
     {
       props.value.map((pi: Pizza, idx: number) =>
-        <PizzaEditor parentForm={props.getParentFormAdapter(idx)} key={idx} count={props.value.length} id={idx} onRemove={props.onRemove} />
+        <MemoPizzaEditor initialValue={pi} parentForm={props.getParentFormAdapter(idx)} key={idx} count={props.value.length} id={idx} onRemove={props.onRemove} />
       )
     }
     <ErrorDisplay visited={props.visited} errorMessages={props.errorMessages} />
@@ -158,11 +158,12 @@ interface PizzaEditorProps {
   parentForm: ParentFormAdapter,
   id: number,
   count: number,
-  onRemove: (idx: number) => void
+  onRemove: (idx: number) => void,
+  initialValue: Pizza
 }
 function PizzaEditor(props: PizzaEditorProps) {
-  const initalPizza = { groesse: 60, belaege: [], pizzadetails: {} }
-  const [overallFormState, form] = useForm<Pizza>(validatePizza, initalPizza, () => { }, {}, props.parentForm);
+ // const initalPizza = { groesse: 60, belaege: [], pizzadetails: {} }
+  const [overallFormState, form] = useForm<Pizza>(validatePizza, props.initialValue, () => { }, {}, props.parentForm);
   const { input, multi, custom } = form;
   //
   return <div>
@@ -181,11 +182,23 @@ interface PizzaDetailsProps {
 interface PizzaDetails {
   sauce: string;
   gutscheincode: string;
+  nochwas: string;
 }
 async function validatePizzaDetails(newValues: PizzaDetails,
   isVisited: isFieldVisitedFunction<PizzaDetails>,
   recordError: RecordError<PizzaDetails>,
   recordErrorDelayed: RecordErrorAsync<PizzaDetails>) {
+    if (newValues.nochwas.length > 0) {
+      const validation = async () => {
+        let invalid = await fetchMock(newValues.nochwas.startsWith('a'), 3000);
+        if (invalid) {
+          return 'Das ist nicht ok';
+        }
+        return null;
+      }
+      recordErrorDelayed('nochwas', validation());
+
+    }
   if (newValues.gutscheincode.length > 0) {
     if (newValues.gutscheincode.length < 3) {
       recordError('gutscheincode', 'Muss immer mindestens drei Zeichen lang sein');
@@ -197,25 +210,26 @@ async function validatePizzaDetails(newValues: PizzaDetails,
         }
         return null;
       }
-      return recordErrorDelayed('gutscheincode', validation());
+      recordErrorDelayed('gutscheincode', validation());
 
     }
   }
 }
 
 function PizzaDetailsEditor(props: PizzaDetailsProps) {
-  const initalPizzaDetails: PizzaDetails = { sauce: 'Classic', gutscheincode: '' };
+  const initalPizzaDetails: PizzaDetails = { sauce: 'Classic', gutscheincode: '', nochwas: '' };
   const [overallFormState, form] = useForm<PizzaDetails>(validatePizzaDetails, initalPizzaDetails, () => { }, {}, props.parentForm);
   const { input, multi, custom } = form;
   const sauceInput = input('sauce');
   return <div>
     <Input label="Gutscheincode" {...input('gutscheincode')} />
+    <Input label="Noch was" {...input('nochwas')} />
 
     <div className="FormGroup">
       <label>Sauce
         <select name='sauce' onBlur={sauceInput.onBlur} onChange={sauceInput.onChange}>
-          <option value='BBQ'>BBQ</option>
           <option value='Classic'>Classic</option>
+          <option value='BBQ'>BBQ</option>
           <option value='Hollandaise'>Hollandaise</option>
         </select>
       </label>
@@ -286,8 +300,7 @@ function BelagEditor(props: CustomObjectInput<string[]>) {
   </div>
 }
 
-/*const MemoPizzaEditor = React.memo(PizzaEditor, (oldProps, newProps) => {
-  const ret = oldProps.count === newProps.count && isEqual(oldProps.data, newProps.data);
+const MemoPizzaEditor = React.memo(PizzaEditor, (oldProps, newProps) => {
+  const ret = oldProps.count === newProps.count && isEqual(oldProps.initialValue, newProps.initialValue);
   return ret;
 });
-*/
