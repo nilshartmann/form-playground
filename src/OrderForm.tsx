@@ -123,7 +123,7 @@ export default function OrderForm(props: OrderFormProps) {
         Show Form State
       </button>
       <MultiPizzaEditor {...multi('pizzen')} />
-      <button disabled={overallFormState.submitRequested && overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
+      <button disabled={ false /* overallFormState.submitRequested /*&& overallFormState.hasErrors*/} onClick={overallFormState.handleSubmit} >
         Bestellen !
       </button>
     </div>

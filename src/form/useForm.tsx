@@ -131,6 +131,10 @@ export type ValidateFn<FIELDS> = (
   recordErrorDelayed: RecordErrorAsync<FIELDS>
 ) => void;
 
+export enum ValidationState {
+  VALID, VALIDATING, INVALID
+}
+
 export enum SubmitState {
   /**
    * initial state. no submit activity is going on.
@@ -170,14 +174,14 @@ export interface Form<FORM_DATA> {
 }
 
 type SubFormStateMap = {
-  [P: string]: boolean;
+  [P: string]: ValidationState;
 }
 type Path<FORM_DATA> = keyof FORM_DATA;
 /**
  * Internal class for the SubFormStates. Do not use in production!
  */
 export class SubFormStates {
-  getState(path: string): boolean | undefined {
+  getState(path: string): ValidationState | undefined {
     return this.subFormStateMap[path];
   }
   private readonly subFormStateMap: SubFormStateMap;
@@ -188,14 +192,16 @@ export class SubFormStates {
       this.subFormStateMap = {};
     }
   }
-
-  setSubFormState(name: string, valid: boolean) {
-    this.subFormStateMap[name] = valid;
+  validating(): boolean {
+    const subFormStates = Object.values(this.subFormStateMap);
+    return subFormStates.some((subFormState: ValidationState) => subFormState === ValidationState.VALIDATING);
+  }
+  setSubFormState(name: string, newState: ValidationState) {
+    this.subFormStateMap[name] = newState;
   }
   allValid(): boolean {
     const subFormStates = Object.values(this.subFormStateMap);
-
-    return subFormStates.length === 0 || !subFormStates.some((subFormState: boolean) => subFormState === false);
+    return subFormStates.length === 0 || !subFormStates.some((subFormState: ValidationState) => subFormState !== ValidationState.VALID);
   }
 
   toString() {
@@ -223,7 +229,21 @@ function isValid<FORM_DATA>(state: State<FORM_DATA>): boolean {
   const ret = Object.keys(state.errors).length === 0 && Object.keys(state.validating).length === 0;
   return ret;
 }
-
+function calcValidationState<FORM_DATA>(state:State<FORM_DATA>, subFormStates: SubFormStates) {
+  const pendingPromises: Promise<string | null>[] = [];
+  Object.values(state.validating).map((values: Promise<string | null>[] | undefined) => {
+    if (values) {
+      pendingPromises.push(...values);
+    }
+  });
+  if (pendingPromises.length > 0 || subFormStates.validating()) {
+    return ValidationState.VALIDATING;
+  } else if (isValid(state) && subFormStates.allValid()) {
+    return ValidationState.VALID;
+  } else {
+    return ValidationState.INVALID;
+  }
+}
 /**
  * A hook that creates everything that's required for building a form.
  * 
@@ -260,6 +280,8 @@ export function useFormInternal<FORM_DATA>(
   const stateCopy = { ...state };
   const [subFormStates, setSubFormStates] = useState(initialSubFormStates);
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
+  const overallValidationState = calcValidationState(state, subFormStates);
+
   console.log(`${formname} (${logPrefix}) submitstate: ${SubmitState[state.submitState]} subFormStates valid? ${subFormStates.allValid()}}`)
 
   // Es sollte einen status für validation geben: invalid, valid, validation_in_progress.
@@ -268,19 +290,27 @@ export function useFormInternal<FORM_DATA>(
   // in allen anderen zuständen: warten.
   useEffect(() => {
     if (parentForm === undefined) {
-      if (state.submitState === SubmitState.SUBMITTING && subFormStates.allValid()) {
-        setState({ ...state, submitState: SubmitState.NONE });
-        submit(state.values);
+      if (state.submitState === SubmitState.SUBMITTING) {
+        if (overallValidationState === ValidationState.VALID) {
+          setState({ ...state, submitState: SubmitState.NONE });
+          submit(state.values);
+        } else if (overallValidationState === ValidationState.INVALID) {
+          console.log('Submit aborted.');
+          setState({ ...state, submitState: SubmitState.NONE });
+        } else {
+          console.log('Validation in progress. Waiting...');
+        }
       }
     } else {    
       console.log(`${formname} (${logPrefix}) invoking onValidChange ${isValid(stateCopy)} subFormStates: ${subFormStates}`);  
-      parentForm.onValidChange(isValid(stateCopy) && subFormStates.allValid());
+      parentForm.onValidChange(overallValidationState);
+      parentForm.onChange(state.values);
     }
     if (!state.validated) {
       const newState = doValidation(state, false);
       setState(newState);
       if (parentForm) {
-        parentForm.onValidChange(isValid(newState));
+        parentForm.onValidChange(calcValidationState(newState, subFormStates));
       }
     }
 
@@ -322,11 +352,9 @@ export function useFormInternal<FORM_DATA>(
   const setValue = (path: Path<FORM_DATA>, newValue: any, idx: number | null = null) => {
     setState(currentState => {
       const newState = setValueOnState(path, newValue, currentState, idx);
-      if (parentForm) {
-        parentForm.onChange(newState.values);
-      }
+      //abort any pending submit. 
+      newState.submitState = SubmitState.NONE;
       return newState;
-
     })
 
   }
@@ -372,26 +400,7 @@ export function useFormInternal<FORM_DATA>(
 
   function handleSubmit(e?: SyntheticEvent) {
     setState((state) => {
-
-      let newState = doValidation(state, true);
-      newState = { ...newState, submitRequested: true, submitState: SubmitState.INVOKE_SUBMIT };
-      const pendingPromises: Promise<string | null>[] = []
-      Object.values(state.validating).map((values: Promise<string | null>[] | undefined) => {
-        if (values) {
-          pendingPromises.push(...values);
-        }
-      });
-      Promise.all(pendingPromises).then(x => {
-        setState(s => {
-          if (Object.keys(s.errors).length === 0) {
-            return { ...s, submitState: SubmitState.SUBMITTING };
-          } else {
-            return { ...s, submitState: SubmitState.NONE };
-          }
-
-        });
-      });
-      return { ...newState };
+       return {...state, submitRequested: true, submitState: SubmitState.SUBMITTING };
     });
   }
   //
@@ -446,7 +455,7 @@ export function useFormInternal<FORM_DATA>(
     const newAdapter: ParentFormAdapter = {
       state: state.submitState,
       submitRequested: state.submitRequested || (parentForm !== undefined && parentForm.submitRequested),
-      onValidChange: (newValid: boolean) => {
+      onValidChange: (newValid: ValidationState) => {
         const idxString = idx === null ? '' : idx;
         const pathString = path as string + idxString
         if (subFormStates.getState(pathString) !== newValid) {
@@ -461,7 +470,15 @@ export function useFormInternal<FORM_DATA>(
         }
       },
       onChange: (newValue: TYPE) => {
-        setValue(path, newValue, idx);
+        let oldValue ;
+        if (idx !== null) {
+          oldValue = (state.values[path] as any)[idx] = newValue;
+        } else {
+          oldValue = state.values[path];
+        }
+        if (oldValue !== newValue) {
+         setValue(path, newValue, idx);
+        }
       }
     }
     return newAdapter;
@@ -569,7 +586,7 @@ export type FormInputFieldPropsProducer<R extends FormField<T>, T extends IndexT
 export interface ParentFormAdapter {
   state: SubmitState;
   submitRequested: boolean;
-  onValidChange: (valid: boolean) => void;
+  onValidChange: (newValidationState: ValidationState) => void;
   onChange: (newValue: any) => void
 }
 
