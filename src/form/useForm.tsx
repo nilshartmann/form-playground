@@ -40,12 +40,12 @@ function createAsyncErrorRecorder<FIELDS>(currentState: State<FIELDS>,
   };
 }
 
-function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>, 
+function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>,
   setState: React.Dispatch<React.SetStateAction<State<FIELDS>>>,
   path: Path<FIELDS>,
   subFormStates: SubFormStates,
   parentForm?: ParentFormAdapter
-  ): (newError: string | null) => void {
+): (newError: string | null) => void {
   return (newError) => {
     setState((newState) => {
       return buildNewStateAfterAsyncValidation<FIELDS>(oldValues, newState, newError, path, subFormStates, parentForm);
@@ -54,29 +54,26 @@ function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>,
 }
 
 function buildNewStateAfterAsyncValidation<FIELDS>(
-  oldValues: Fields<FIELDS>, 
-  currentState: State<FIELDS>, 
+  oldValues: Fields<FIELDS>,
+  currentState: State<FIELDS>,
   newError: string | null, path: Path<FIELDS>,
   subFormStates: SubFormStates,
   parentForm?: ParentFormAdapter
-  ) {
-    //@ts-ignore
+) {
+  //@ts-ignore
   const validating = { ...(currentState.validating) };
   //@ts-ignore
   if (!validating[path]) {
     return currentState;
   }
-  const wasValid = isValid(currentState) && subFormStates.allValid();
-
   const oldValue = oldValues[path];
   const newValue = currentState.values[path];
   if (newValue !== oldValue) {
     // validated value is obsolete.
     return currentState;
   } else {
-    delete(validating[path]);
+    delete (validating[path]);
   }
-
   const newErrors: FormErrors<FIELDS> = currentState.errors;
   if (newError) {
     newErrors[path] = [newError];
@@ -84,10 +81,6 @@ function buildNewStateAfterAsyncValidation<FIELDS>(
     delete newErrors[path];
   }
   const newState = { ...currentState, validating, errors: newErrors };
-  const isNowValid = isValid(newState) && subFormStates.allValid();
-  if (parentForm && (wasValid !== isNowValid)) {
-    parentForm.onValidChange(isNowValid );
-  }
   return newState;
 }
 
@@ -138,7 +131,7 @@ export type ValidateFn<FIELDS> = (
   recordErrorDelayed: RecordErrorAsync<FIELDS>
 ) => void;
 
-enum SubmitState {
+export enum SubmitState {
   /**
    * initial state. no submit activity is going on.
    */
@@ -155,8 +148,10 @@ enum SubmitState {
 //
 // useFormHook ########################################################################
 //
-
-interface State<FIELDS> {
+/**
+ * Internal State - Exported for Test only! Do not use in production!
+ */
+export interface State<FIELDS> {
   values: Fields<FIELDS>;
   submitRequested: boolean;
   submitState: SubmitState;
@@ -171,19 +166,29 @@ export interface Form<FORM_DATA> {
   input: FormInputFieldPropsProducer<FormFieldInput, any, FORM_DATA>;
   multi: FormInputFieldPropsProducer<MultiFormInput<any>, any, FORM_DATA>;
   custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any, FORM_DATA>;
-  getParentFormAdapter: (key:keyof FORM_DATA) => ParentFormAdapter;
+  getParentFormAdapter: (key: keyof FORM_DATA) => ParentFormAdapter;
 }
 
 type SubFormStateMap = {
   [P: string]: boolean;
 }
 type Path<FORM_DATA> = keyof FORM_DATA;
-
-class SubFormStates {
+/**
+ * Internal class for the SubFormStates. Do not use in production!
+ */
+export class SubFormStates {
   getState(path: string): boolean | undefined {
     return this.subFormStateMap[path];
   }
-  private readonly subFormStateMap: SubFormStateMap = {};
+  private readonly subFormStateMap: SubFormStateMap;
+  constructor (data?: SubFormStates) {
+    if (data) {
+      this.subFormStateMap = data.subFormStateMap;
+    } else {
+      this.subFormStateMap = {};
+    }
+  }
+
   setSubFormState(name: string, valid: boolean) {
     this.subFormStateMap[name] = valid;
   }
@@ -198,8 +203,11 @@ class SubFormStates {
   }
 }
 
-
-function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<FORM_DATA> {
+/**
+ * Function to create the complex inital state. Exported only for testing purposes.
+ * @param fields 
+ */
+export function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<FORM_DATA> {
   return {
     values: fields,
     submitRequested: false,
@@ -212,7 +220,7 @@ function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<FORM_DA
 }
 
 function isValid<FORM_DATA>(state: State<FORM_DATA>): boolean {
-  const ret = Object.keys(state.errors).length === 0 && Object.keys(state.validating).length === 0 ;
+  const ret = Object.keys(state.errors).length === 0 && Object.keys(state.validating).length === 0;
   return ret;
 }
 
@@ -225,21 +233,48 @@ function isValid<FORM_DATA>(state: State<FORM_DATA>): boolean {
  * @param valueCreators an (optional) object which contains creator functions for array based fields
  */
 export function useForm<FORM_DATA>(
+  formname: string,
   validate: ValidateFn<FORM_DATA>,
   fields: Fields<FORM_DATA>,
   submit: (values: Fields<FORM_DATA>) => void,
   valueCreators: ValueCreators<FORM_DATA> = {},
   parentForm?: ParentFormAdapter
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
-  const [state, setState] = useState(createInitialState(fields));
-  const [subFormStates, setSubFormStates] = useState(new SubFormStates());
+  return useFormInternal(formname, validate, fields, submit, valueCreators, createInitialState(fields), new SubFormStates(), parentForm);
+}
+/**
+ * internal constructor for testing purposes only. Do not use in production!
+ */
+export function useFormInternal<FORM_DATA>(
+  formname: string,
+  validate: ValidateFn<FORM_DATA>,
+  fields: Fields<FORM_DATA>,
+  submit: (values: Fields<FORM_DATA>) => void,
+  valueCreators: ValueCreators<FORM_DATA> = {},
+  initialState: State<FORM_DATA>,
+  initialSubFormStates: SubFormStates,
+  parentForm?: ParentFormAdapter
+
+): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
+  const [state, setState] = useState(initialState);
+  const stateCopy = { ...state };
+  const [subFormStates, setSubFormStates] = useState(initialSubFormStates);
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
+  console.log(`${formname} (${logPrefix}) submitstate: ${SubmitState[state.submitState]} subFormStates valid? ${subFormStates.allValid()}}`)
+
+  // Es sollte einen status für validation geben: invalid, valid, validation_in_progress.
+  // wenn Submitting && alle Kinder valid -> submit
+  // wenn submitting && ich oder kind invalid -> abort
+  // in allen anderen zuständen: warten.
   useEffect(() => {
-    if (parentForm === undefined ) {
+    if (parentForm === undefined) {
       if (state.submitState === SubmitState.SUBMITTING && subFormStates.allValid()) {
         setState({ ...state, submitState: SubmitState.NONE });
         submit(state.values);
       }
+    } else {    
+      console.log(`${formname} (${logPrefix}) invoking onValidChange ${isValid(stateCopy)} subFormStates: ${subFormStates}`);  
+      parentForm.onValidChange(isValid(stateCopy) && subFormStates.allValid());
     }
     if (!state.validated) {
       const newState = doValidation(state, false);
@@ -248,6 +283,7 @@ export function useForm<FORM_DATA>(
         parentForm.onValidChange(isValid(newState));
       }
     }
+
   });
 
   //
@@ -304,12 +340,7 @@ export function useForm<FORM_DATA>(
       newValues[path] = newValue;
     }
     newState.values = newValues;
-    const wasValid = isValid(currentState) && subFormStates.allValid();
     newState = doValidation(newState, state.submitRequested);
-    const isNowValid = isValid(newState) && subFormStates.allValid();
-    if (parentForm && (wasValid !== isNowValid)) {
-      parentForm.onValidChange(isNowValid );
-    }
     newState.submitState = SubmitState.NONE;
     return newState;
 
@@ -398,7 +429,7 @@ export function useForm<FORM_DATA>(
   function createBaseIndividualFields(path: Path<FORM_DATA>): FormField<any> {
     const value = state.values[path];
     const newErrors = state.errors[path];
-    const submitRequested = (parentForm && parentForm.submitRequested) || state.submitRequested; 
+    const submitRequested = (parentForm && parentForm.submitRequested) || state.submitRequested;
     const ret: FormField<any> = {
       value: value,
       errorMessages: newErrors,
@@ -411,28 +442,30 @@ export function useForm<FORM_DATA>(
     return ret;
   }
 
-  function getParentFormAdapterInternal<TYPE>(path: Path<FORM_DATA>, idx: number|null) {
-      const newAdapter: ParentFormAdapter = {
-        state: state.submitState,
-        submitRequested: state.submitRequested || (parentForm !== undefined && parentForm.submitRequested),
-        onValidChange: (newValid: boolean) => {
-          const idxString = idx===null ? '':idx;
-          setSubFormStates(sfs => { 
-            const oldState = sfs.allValid();
-            sfs.setSubFormState(path as string + idxString, newValid); 
-            const newState = sfs.allValid();
-            if (parentForm && oldState !== newState) {
-              parentForm.onValidChange(isValid(state) && sfs.allValid());
-            }
-            return sfs;
+  function getParentFormAdapterInternal<TYPE>(path: Path<FORM_DATA>, idx: number | null) {
+    const newAdapter: ParentFormAdapter = {
+      state: state.submitState,
+      submitRequested: state.submitRequested || (parentForm !== undefined && parentForm.submitRequested),
+      onValidChange: (newValid: boolean) => {
+        const idxString = idx === null ? '' : idx;
+        const pathString = path as string + idxString
+        if (subFormStates.getState(pathString) !== newValid) {
+          console.log(`${formname} (${logPrefix}) SubFormState for path ${pathString} has changed from ${subFormStates.getState(pathString)} to ${newValid}`);  
+          setSubFormStates(sfs => {
+            sfs.setSubFormState(pathString, newValid);
+            return new SubFormStates(sfs);
           });
-        }, 
-        onChange: (newValue: TYPE) => {
-          setValue(path, newValue, idx);
+        } else {
+          console.log(`${formname} (${logPrefix}) SubFormState for path ${pathString} remains ${newValid}`);  
+
         }
+      },
+      onChange: (newValue: TYPE) => {
+        setValue(path, newValue, idx);
       }
-      return newAdapter;
-    };
+    }
+    return newAdapter;
+  };
 
   function createArrayFields<ARRAY_CONTENT_TYPE>(path: Path<FORM_DATA>): MultiFormInput<ARRAY_CONTENT_TYPE> {
     const ret = createBaseIndividualFields(path) as MultiFormInput<any>;
@@ -469,7 +502,7 @@ export function useForm<FORM_DATA>(
 
   }
   const overallFormState: OverallState<FORM_DATA> = {
-    hasErrors: Object.keys(state.errors).length > 0,
+    hasErrors: !(isValid(state) && subFormStates.allValid()),
     values: state.values,
     errors: state.errors,
     setValue: setValue,

@@ -28,7 +28,7 @@ const validateLoginForm: ValidateFn<LoginFormState> = function(
 export default function LoginForm() {
   const [overallFormState, {input}] = useForm<
     LoginFormState
-  >(validateLoginForm, {
+  >('login',validateLoginForm, {
     username: "",
     password: ""
   }, () => {});

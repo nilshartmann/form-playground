@@ -108,12 +108,10 @@ interface OrderFormProps {
 }
 
 export default function OrderForm(props: OrderFormProps) {
-  const [overallFormState, form] = useForm<OrderFormState>(validatePizzaForm, initialValues, props.submit, valueCreators);
+  const [overallFormState, form] = useForm<OrderFormState>('order form', validatePizzaForm, initialValues, props.submit, valueCreators);
   const { input, multi, custom } = form;
-  console.log('errors', overallFormState.errors);
-  return (
+  return  (
     <div className="Form">
-
       <Input label="Vorname" {...input('vorname')} />
       <Input label="Nachname" {...input('nachname')} />
       <Input label="PLZ" {...input('plz')} />
@@ -139,7 +137,7 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
     <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
     {
       props.value.map((pi: Pizza, idx: number) =>
-        <MemoPizzaEditor initialValue={pi} parentForm={props.getParentFormAdapter(idx)} key={idx} count={props.value.length} id={idx} onRemove={props.onRemove} />
+        < PizzaEditor initialValue={pi} parentForm={props.getParentFormAdapter(idx)} key={idx} count={props.value.length} id={idx} onRemove={props.onRemove} />
       )
     }
     <ErrorDisplay visited={props.visited} errorMessages={props.errorMessages} />
@@ -149,7 +147,7 @@ const validatePizza: ValidateFn<Pizza> = (newValues,
   isVisited,
   recordError: RecordError<Pizza>,
   recordErrorDelayed: RecordErrorAsync<Pizza>) => {
-  if (newValues.groesse > 50) {
+  if (newValues.groesse > 5000) {
     recordError('groesse', 'Eine Pizza darf maximal 50 cm groß sein');
   }
 }
@@ -162,10 +160,8 @@ interface PizzaEditorProps {
   initialValue: Pizza
 }
 function PizzaEditor(props: PizzaEditorProps) {
- // const initalPizza = { groesse: 60, belaege: [], pizzadetails: {} }
-  const [overallFormState, form] = useForm<Pizza>(validatePizza, props.initialValue, () => { }, {}, props.parentForm);
+  const [overallFormState, form] = useForm<Pizza>('pizzaForm', validatePizza, props.initialValue, () => { }, {}, props.parentForm);
   const { input, multi, custom } = form;
-  //
   return <div>
     <Input label="Größe" {...input('groesse')} />
     <BelagEditor {...custom('belaege')} />
@@ -204,7 +200,7 @@ async function validatePizzaDetails(newValues: PizzaDetails,
       recordError('gutscheincode', 'Muss immer mindestens drei Zeichen lang sein');
     } else {
       const validation = async () => {
-        let invalid = await fetchMock(newValues.gutscheincode.startsWith('a'), 9000);
+        let invalid = await fetchMock(newValues.gutscheincode.startsWith('a'), 4000);
         if (invalid) {
           return 'Gutscheincode nicht ok';
         }
@@ -217,8 +213,9 @@ async function validatePizzaDetails(newValues: PizzaDetails,
 }
 
 function PizzaDetailsEditor(props: PizzaDetailsProps) {
+  console.log('Rerender ################################################################');
   const initalPizzaDetails: PizzaDetails = { sauce: 'Classic', gutscheincode: '', nochwas: '' };
-  const [overallFormState, form] = useForm<PizzaDetails>(validatePizzaDetails, initalPizzaDetails, () => { }, {}, props.parentForm);
+  const [overallFormState, form] = useForm<PizzaDetails>('PizzaDetails', validatePizzaDetails, initalPizzaDetails, () => { }, {}, props.parentForm);
   const { input, multi, custom } = form;
   const sauceInput = input('sauce');
   return <div>
