@@ -72,7 +72,6 @@ it('should submit', async () => {
     fireEvent.click(addPizzaButton);
     const groesseField = wrapper.getByLabelText('Größe') as HTMLInputElement;
     expect(groesseField).toBe;
-
     fireChange(vornameField, 'Chuck');
     fireChange(nameField, 'Norris');
     fireEvent.change(plzField, {
@@ -81,7 +80,7 @@ it('should submit', async () => {
     fireEvent.blur(plzField);
     expect(plzField.value).toEqual('22300');
     fireChange(groesseField, '20');
-
+    await wait(() => { return true; });
     fireEvent.click(submitButton);
     await wait(() => { return true; });
 

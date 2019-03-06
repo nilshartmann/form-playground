@@ -123,7 +123,7 @@ export default function OrderForm(props: OrderFormProps) {
         Show Form State
       </button>
       <MultiPizzaEditor {...multi('pizzen')} />
-      <button disabled={ false /* overallFormState.submitRequested /*&& overallFormState.hasErrors*/} onClick={overallFormState.handleSubmit} >
+      <button disabled={ overallFormState.submitRequested || overallFormState.hasErrors} onClick={overallFormState.handleSubmit} >
         Bestellen !
       </button>
     </div>
@@ -213,7 +213,6 @@ async function validatePizzaDetails(newValues: PizzaDetails,
 }
 
 function PizzaDetailsEditor(props: PizzaDetailsProps) {
-  console.log('Rerender ################################################################');
   const initalPizzaDetails: PizzaDetails = { sauce: 'Classic', gutscheincode: '', nochwas: '' };
   const [overallFormState, form] = useForm<PizzaDetails>('PizzaDetails', validatePizzaDetails, initalPizzaDetails, () => { }, {}, props.parentForm);
   const { input, multi, custom } = form;

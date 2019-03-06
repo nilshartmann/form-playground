@@ -60,6 +60,7 @@ function buildNewStateAfterAsyncValidation<FIELDS>(
   subFormStates: SubFormStates,
   parentForm?: ParentFormAdapter
 ) {
+  console.log(`buildNewStateAfterAsyncValidation called`);
   //@ts-ignore
   const validating = { ...(currentState.validating) };
   //@ts-ignore
@@ -225,7 +226,8 @@ export function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<
   }
 }
 
-function isValid<FORM_DATA>(state: State<FORM_DATA>): boolean {
+function isValid<FORM_DATA>(state: State<FORM_DATA>, caller = ''): boolean {
+  console.log(`${caller} num errors ${Object.keys(state.errors).length} num validating ${Object.keys(state.validating).length}` );
   const ret = Object.keys(state.errors).length === 0 && Object.keys(state.validating).length === 0;
   return ret;
 }
@@ -238,7 +240,7 @@ function calcValidationState<FORM_DATA>(state:State<FORM_DATA>, subFormStates: S
   });
   if (pendingPromises.length > 0 || subFormStates.validating()) {
     return ValidationState.VALIDATING;
-  } else if (isValid(state) && subFormStates.allValid()) {
+  } else if (isValid(state, 'cvc') && subFormStates.allValid()) {
     return ValidationState.VALID;
   } else {
     return ValidationState.INVALID;
@@ -302,7 +304,7 @@ export function useFormInternal<FORM_DATA>(
         }
       }
     } else {    
-      console.log(`${formname} (${logPrefix}) invoking onValidChange ${isValid(stateCopy)} subFormStates: ${subFormStates}`);  
+      console.log(`${formname} (${logPrefix}) invoking onValidChange ${isValid(stateCopy, formname)} subFormStates: ${subFormStates}`);  
       parentForm.onValidChange(overallValidationState);
       parentForm.onChange(state.values);
     }
@@ -399,6 +401,9 @@ export function useFormInternal<FORM_DATA>(
   }
 
   function handleSubmit(e?: SyntheticEvent) {
+    console.log('-----------------------------------------------------');
+    console.log('submitting');
+    console.log('-----------------------------------------------------');
     setState((state) => {
        return {...state, submitRequested: true, submitState: SubmitState.SUBMITTING };
     });
@@ -519,7 +524,7 @@ export function useFormInternal<FORM_DATA>(
 
   }
   const overallFormState: OverallState<FORM_DATA> = {
-    hasErrors: !(isValid(state) && subFormStates.allValid()),
+    hasErrors: !(isValid(state, formname) && subFormStates.allValid()),
     values: state.values,
     errors: state.errors,
     setValue: setValue,
