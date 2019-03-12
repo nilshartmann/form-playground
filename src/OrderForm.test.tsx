@@ -41,7 +41,8 @@ it('should display two validation errors when vor- and nachname was blurred', ()
 it('should disable submit button if errors present', () => {
     const wrapper = render(<OrderForm submit={() => { }} />);
     expect(wrapper.queryAllByTestId("error-display")).toHaveLength(0);
-    const submit = wrapper.getByText('Bestellen !');
+    const submit:HTMLButtonElement = wrapper.getByText('Bestellen !') as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
     fireEvent.click(submit);
     const errors = wrapper.queryAllByTestId("error-message");
     expect(errors.length).toBeGreaterThan(0);
