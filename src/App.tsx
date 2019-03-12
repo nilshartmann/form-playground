@@ -13,7 +13,6 @@ class App extends Component {
         <div className="PageContainer">
           <main>
             <h1>Example: Login Form</h1>
-            <LoginForm />
             <h1>Pizza ist das Beste...</h1>
             <OrderForm submit={(values:any) => {
               console.log('######################################################################'); 
