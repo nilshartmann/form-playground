@@ -275,16 +275,108 @@ enum ActionType {
 
 type FormAction<FORM_DATA> =
 { actionType: ActionType.END_SUBMIT } |
-{ actionType: ActionType.VALIDATE, allFields: boolean } |
-{ actionType: ActionType.SET_VALUE, path: Path<any>, newValue: any, idx: number | null } |
+{ actionType: ActionType.VALIDATE, dispatch: React.Dispatch<FormAction<FORM_DATA>>, validate: ValidateFn<FORM_DATA> } |
+{ actionType: ActionType.SET_VALUE, path: Path<any>, newValue: any, idx: number | null ,  dispatch: React.Dispatch<FormAction<FORM_DATA>>, validate: ValidateFn<FORM_DATA>} |
 { actionType: ActionType.SUBMIT } |
-{ actionType: ActionType.MULTI_FIELD_REMOVE, path: Path<FORM_DATA>, idx: number } |
-{ actionType: ActionType.MULTI_FIELD_ADD, path: Path<FORM_DATA> } |
+{ actionType: ActionType.MULTI_FIELD_REMOVE, path: Path<FORM_DATA>, idx: number,  dispatch: React.Dispatch<FormAction<FORM_DATA>>, validate: ValidateFn<FORM_DATA>} |
+{ actionType: ActionType.MULTI_FIELD_ADD, path: Path<FORM_DATA>, valueCreators: ValueCreators<FORM_DATA>, dispatch: React.Dispatch<FormAction<FORM_DATA>>, validate: ValidateFn<FORM_DATA> } |
 { actionType: ActionType.FIELD_VISITED, fieldname: string }|
 { actionType: ActionType.APPLY_ERRORS_ASYNC, 
     oldValues: Fields<FORM_DATA>,  
     newError: string | null, 
     path: Path<FORM_DATA>};
+
+
+ //
+  // validation ##############################################################
+  // 
+  function doValidation<FORM_DATA extends IndexType>(
+    currentState: State<FORM_DATA>, 
+    dispatch: React.Dispatch<FormAction<FORM_DATA>>,
+    validate: ValidateFn<FORM_DATA>
+    ): State<FORM_DATA> {
+    const newErrors: FormErrors<FORM_DATA> = {};
+    const newState = { ...currentState, errors: newErrors, validated: true };
+    if (typeof dispatch !== 'function') {
+      throw 'Stop ' + dispatch;
+    }
+   validate(
+      newState.values,
+      fieldName => (currentState.fieldsVisited[fieldName] === true) /* TODO: ob man das noch mal braucht? || (allFields === true)*/,
+      createErrorRecorder(newErrors),
+      createAsyncErrorRecorder(newState, dispatch)
+    );
+    return newState;
+  }
+
+  function formReducer<FORM_DATA extends IndexType>(state: State<FORM_DATA>, action: FormAction<FORM_DATA>): State<FORM_DATA> {
+    console.log(` Performing Action ${ActionType[action.actionType]} State: ${JSON.stringify(state)}`)
+    switch (action.actionType) {
+      case ActionType.SUBMIT:
+        return { ...state, submitRequested: true, submitState: SubmitState.SUBMITTING };
+      case ActionType.END_SUBMIT:
+        return { ...state, submitState: SubmitState.NONE };
+      case ActionType.MULTI_FIELD_REMOVE:
+        let newArray = (state.values[action.path] as []).filter((e, myIdx) => action.idx !== myIdx);
+        return formReducer(state, 
+          { actionType: ActionType.SET_VALUE, 
+            idx: null, 
+            path: action.path, 
+            newValue: newArray, 
+            dispatch: action.dispatch, 
+            validate: action.validate }
+            );
+      case ActionType.MULTI_FIELD_ADD:
+        const initial: any[] = state.values[action.path] as any[];
+        // TODO das wird noch interessant.....
+        const valueCreator: (() => object) | undefined = action.valueCreators[action.path];
+        if (valueCreator) {
+          const newArray = [...(initial)];
+          newArray.push(valueCreator());
+          return formReducer(state, { actionType: ActionType.SET_VALUE, idx: null, path: action.path, newValue: newArray,dispatch: action.dispatch, 
+            validate: action.validate });
+        } else {
+          console.error(`No valueCreator for ${action.path} was supplied. 
+      Adding values is impossible. To change this supply 
+      an object with a valueCreator for ${action.path} to useForm`);
+          return state;
+        }
+        case ActionType.APPLY_ERRORS_ASYNC: 
+        return buildNewStateAfterAsyncValidation(action.oldValues, state, action.newError, action.path);
+      case ActionType.VALIDATE:
+        {
+          const newState= doValidation(state, action.dispatch, action.validate);
+          console.log(`new State : ${JSON.stringify(newState)}`);
+          return newState;
+        }
+      case ActionType.FIELD_VISITED:
+        const newFieldsVisited = {
+          // https://stackoverflow.com/a/51193091/6134498
+          ...(state.fieldsVisited as any),
+          [action.fieldname]: true
+        } as FieldsVisited<FORM_DATA>;
+        return { ...state, fieldsVisited: newFieldsVisited, submitState: SubmitState.NONE }
+
+      case ActionType.SET_VALUE:
+        let newState = { ...state };
+        const newValues = Object.assign({}, state.values) as FORM_DATA;
+        if (action.idx !== null) {
+          (newValues[action.path as string] as any)[action.idx] = action.newValue;
+        } else {
+          newValues[action.path as string] = action.newValue;
+        }
+        newState.values = newValues;
+        newState = doValidation(newState, action.dispatch, action.validate);
+        newState.submitState = SubmitState.NONE;
+        return newState;
+      default:
+        throw `Unsupported Action ${JSON.stringify(action)} is not implemented`;
+    }
+  };
+
+
+
+
 
 /**
  * internal constructor for testing purposes only. Do not use in production!
@@ -306,82 +398,10 @@ export function useFormInternal<FORM_DATA extends IndexType>(
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
 
 
-  //
-  // validation ##############################################################
-  // 
-  const doValidation = (currentState: State<FORM_DATA>, allFields: boolean): State<FORM_DATA> => {
-    const newErrors: FormErrors<FORM_DATA> = {};
-    const newState = { ...currentState, errors: newErrors, validated: true };
-    if (typeof dispatch !== 'function') {
-      throw 'Stop ' + dispatch;
-    }
-    validate(
-      newState.values,
-      fieldName => (currentState.fieldsVisited[fieldName] === true) || (allFields === true),
-      createErrorRecorder(newErrors),
-      createAsyncErrorRecorder(newState, dispatch)
-    );
-    return newState;
-  }
-
-  const formReducer:Reducer<State<FORM_DATA>, FormAction<FORM_DATA>> = function (state: State<FORM_DATA>, action: FormAction<FORM_DATA>): State<FORM_DATA> {
-    console.log(`${logPrefix} Performing Action ${ActionType[action.actionType]} State: ${JSON.stringify(state)}`)
-    switch (action.actionType) {
-      case ActionType.SUBMIT:
-        return { ...state, submitRequested: true, submitState: SubmitState.SUBMITTING };
-      case ActionType.END_SUBMIT:
-        return { ...state, submitState: SubmitState.NONE };
-      case ActionType.MULTI_FIELD_REMOVE:
-        let newArray = (state.values[action.path] as []).filter((e, myIdx) => action.idx !== myIdx);
-        return formReducer(state, { actionType: ActionType.SET_VALUE, idx: action.idx, path: action.path, newValue: newArray });
-      case ActionType.MULTI_FIELD_ADD:
-        const initial: any[] = state.values[action.path] as any[];
-        // TODO das wird noch interessant.....
-        const valueCreator: (() => object) | undefined = valueCreators[action.path];
-        if (valueCreator) {
-          const newArray = [...(initial)];
-          newArray.push(valueCreator());
-          return formReducer(state, { actionType: ActionType.SET_VALUE, idx: null, path: action.path, newValue: newArray });
-        } else {
-          console.error(`No valueCreator for ${action.path} was supplied. 
-      Adding values is impossible. To change this supply 
-      an object with a valueCreator for ${action.path} to useForm`);
-          return state;
-        }
-        case ActionType.APPLY_ERRORS_ASYNC: 
-        return buildNewStateAfterAsyncValidation(action.oldValues, state, action.newError, action.path);
-      case ActionType.VALIDATE:
-        {
-          const newState= doValidation(state, false);
-          console.log(`new State : ${JSON.stringify(newState)}`);
-          return newState;
-        }
-      case ActionType.FIELD_VISITED:
-        const newFieldsVisited = {
-          // https://stackoverflow.com/a/51193091/6134498
-          ...(state.fieldsVisited as any),
-          [action.fieldname]: true
-        } as FieldsVisited<FORM_DATA>;
-        return { ...state, fieldsVisited: newFieldsVisited, submitState: SubmitState.NONE }
-
-      case ActionType.SET_VALUE:
-        let newState = { ...state };
-        const newValues = Object.assign({}, state.values) as FORM_DATA;
-        if (action.idx !== null) {
-          (newValues[action.path as string] as any)[action.idx] = action.newValue;
-        } else {
-          newValues[action.path as string] = action.newValue;
-        }
-        newState.values = newValues;
-        newState = doValidation(newState, state.submitRequested);
-        newState.submitState = SubmitState.NONE;
-        return newState;
-      default:
-        throw `Unsupported Action ${JSON.stringify(action)} is not implemented`;
-    }
-  };
+ 
   console.log(`${logPrefix} now using reducer`)
-  const [state, dispatch] = useReducer(formReducer, initialState);
+  const fr:Reducer<State<FORM_DATA>, FormAction<FORM_DATA>> = formReducer;
+  const [state, dispatch] = useReducer(fr, initialState);
   const [subFormStates, setSubFormStates] = useState(initialSubFormStates);
   const overallValidationState = calcValidationState(state, subFormStates);
 
@@ -396,7 +416,7 @@ export function useFormInternal<FORM_DATA extends IndexType>(
       if (state.submitState === SubmitState.SUBMITTING) {
         if (overallValidationState === ValidationState.VALID) {
           dispatch({ actionType: ActionType.END_SUBMIT });
-          submit(state.values);
+          submit(state.values as any /* TODO */);
         } else if (overallValidationState === ValidationState.INVALID) {
           console.log('Submit aborted.');
           dispatch({ actionType: ActionType.END_SUBMIT });
@@ -414,7 +434,7 @@ export function useFormInternal<FORM_DATA extends IndexType>(
 
     if (!state.validated) {
       console.log(logPrefix + ' dispatching initial validate');
-      dispatch({ actionType: ActionType.VALIDATE, allFields: false })
+      dispatch({ actionType: ActionType.VALIDATE, dispatch, validate })
       // TODO
       //      if (parentForm) {
       //        parentForm.onValidChange(calcValidationState(newState, subFormStates));
@@ -443,7 +463,7 @@ export function useFormInternal<FORM_DATA extends IndexType>(
    * @param idx when the value at path is an array, the index must be supplied to change just the value at the index.
    */
   const setValue = (path: Path<FORM_DATA>, newValue: any, idx: number | null = null) => {
-    dispatch({ actionType: ActionType.SET_VALUE, path: path, newValue: newValue, idx: idx });
+    dispatch({ actionType: ActionType.SET_VALUE, path, newValue, idx, dispatch, validate });
   }
 
   /**
@@ -471,10 +491,10 @@ export function useFormInternal<FORM_DATA extends IndexType>(
 
 
   const onMultiFieldRemove = (path: Path<FORM_DATA>, idx: number) => {
-    dispatch({ actionType: ActionType.MULTI_FIELD_REMOVE, idx, path });
+    dispatch({ actionType: ActionType.MULTI_FIELD_REMOVE, idx, path, dispatch, validate });
   }
   const onMultiAdd = (path: Path<FORM_DATA>) => {
-    dispatch({actionType: ActionType.MULTI_FIELD_ADD, path});
+    dispatch({actionType: ActionType.MULTI_FIELD_ADD, path, dispatch, validate, valueCreators});
   }
 
   // 
