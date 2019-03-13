@@ -69,7 +69,7 @@ function buildNewStateAfterAsyncValidation<FIELDS>(
   } else {
     delete (validating[path]);
   }
-  const newErrors: FormErrors<FIELDS> = currentState.errors;
+  const newErrors: FormErrors<FIELDS> = {...currentState.errors};
   if (newError) {
     newErrors[path] = [newError];
   } else {
@@ -263,16 +263,6 @@ enum ActionType {
   SUBMIT, END_SUBMIT, VALIDATE, SET_VALUE, FIELD_VISITED, MULTI_FIELD_REMOVE, MULTI_FIELD_ADD, APPLY_ERRORS_ASYNC
 }
 
-
-
-//
-/*interface FormAction {
-  actionType: ActionType,
-  payload?: any
-}*/
-
-
-
 type FormAction<FORM_DATA> =
 { actionType: ActionType.END_SUBMIT } |
 { actionType: ActionType.VALIDATE, dispatch: React.Dispatch<FormAction<FORM_DATA>>, validate: ValidateFn<FORM_DATA> } |
@@ -375,9 +365,6 @@ type FormAction<FORM_DATA> =
   };
 
 
-
-
-
 /**
  * internal constructor for testing purposes only. Do not use in production!
  */
@@ -429,7 +416,7 @@ export function useFormInternal<FORM_DATA extends IndexType>(
       parentForm.onValidChange(overallValidationState);
       parentForm.onChange(state.values);
     }
-  }, [state.submitState, state.values]);
+  }, [state.submitState, state.values, overallValidationState]);
   useEffect(() => {
 
     if (!state.validated) {
