@@ -30,13 +30,11 @@ export function useForm<FORM_DATA>(
  * is something that the form, not this hook, must do!
  * 
  * @param newValues the current form's values
- * @param isVisited a function to check if the field was visited
  * @param recordError an ErrorRecorder to record the errors
  * @param validateDelayed a function to register a delayed validator
  */
 export type ValidateFn<FIELDS> = (
   newValues: Partial<FIELDS>,
-  isVisited: isFieldVisitedFunction<FIELDS>,
   recordError: RecordError<FIELDS>,
   recordErrorDelayed: RecordErrorAsync<FIELDS>
 ) => void;
@@ -468,7 +466,6 @@ type FormAction<FORM_DATA> =
     }
    validate(
       newState.values,
-      fieldName => (currentState.fieldsVisited[fieldName] === true) /* TODO: ob man das noch mal braucht? || (allFields === true)*/,
       createErrorRecorder(newErrors),
       createAsyncErrorRecorder(newState, dispatch)
     );

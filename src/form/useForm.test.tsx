@@ -50,7 +50,7 @@ function TestRunner<FORM_DATA extends TestData>(props: {
 }
 ) {
     const { fields, initialState, initialSubFormStates,parentFormAdapter } = props;
-    const validate:ValidateFn<TestData> = (data, isVisited, errorRecorder:RecordError<TestData>) => {
+    const validate:ValidateFn<TestData> = (data, errorRecorder:RecordError<TestData>) => {
         console.log('validate called');
         errorRecorder('foo', 'asdfasf');
     }

@@ -31,7 +31,6 @@ const invalidPlzCache: string[] = [];
 // validatePizzaForm jetzt "kontextlos", dh zum Beispiel von außen testbar
 const validatePizzaForm: ValidateFn<OrderFormState> = function (
   newFormInput,
-  isVisited,
   recordError: RecordError<OrderFormState>,
   recordErrorAsync: RecordErrorAsync<OrderFormState>
 ) {
@@ -100,7 +99,7 @@ const initialValues: OrderFormState = {
   drinks: []
 };
 const valueCreators: ValueCreators<OrderFormState> = {
-  pizzen: () => { return { groesse: 50, belaege: [] } }
+  pizzen: () => { return { groesse: 5001, belaege: [] } }
 }
 
 interface OrderFormProps {
@@ -144,7 +143,6 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
   </div>
 }
 const validatePizza: ValidateFn<Pizza> = (newValues,
-  isVisited,
   recordError: RecordError<Pizza>,
   recordErrorDelayed: RecordErrorAsync<Pizza>) => {
   if (newValues.groesse > 5000) {
@@ -181,7 +179,6 @@ interface PizzaDetails {
   nochwas: string;
 }
 async function validatePizzaDetails(newValues: PizzaDetails,
-  isVisited: isFieldVisitedFunction<PizzaDetails>,
   recordError: RecordError<PizzaDetails>,
   recordErrorDelayed: RecordErrorAsync<PizzaDetails>) {
     if (newValues.nochwas.length > 0) {
