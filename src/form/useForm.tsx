@@ -310,7 +310,6 @@ function buildNewStateAfterAsyncValidation<FIELDS>(
   currentState: State<FIELDS>,
   newError: string | null, path: Path<FIELDS>
 ) {
-  console.log(`buildNewStateAfterAsyncValidation called`);
   //@ts-ignore
   const validating = { ...(currentState.validating) };
   //@ts-ignore
@@ -411,8 +410,7 @@ export function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<
   }
 }
 
-function isValid<FORM_DATA>(state: State<FORM_DATA>, caller = ''): boolean {
-  console.log(`${caller} num errors ${Object.keys(state.errors).length} num validating ${Object.keys(state.validating).length}`);
+function isValid<FORM_DATA>(state: State<FORM_DATA>): boolean {
   const ret = Object.keys(state.errors).length === 0 && Object.keys(state.validating).length === 0;
   return ret;
 }
@@ -425,7 +423,7 @@ function calcValidationState<FORM_DATA>(state: State<FORM_DATA>, subFormStates: 
   });
   if (pendingPromises.length > 0 || subFormStates.validating()) {
     return ValidationState.VALIDATING;
-  } else if (isValid(state, 'cvc') && subFormStates.allValid()) {
+  } else if (isValid(state) && subFormStates.allValid()) {
     return ValidationState.VALID;
   } else {
     return ValidationState.INVALID;
@@ -473,7 +471,6 @@ type FormAction<FORM_DATA> =
   }
 
   function formReducer<FORM_DATA extends IndexType>(state: State<FORM_DATA>, action: FormAction<FORM_DATA>): State<FORM_DATA> {
-    console.log(` Performing Action ${ActionType[action.actionType]} State: ${JSON.stringify(state)}`)
     switch (action.actionType) {
       case ActionType.SUBMIT:
         return { ...state, submitRequested: true, submitState: SubmitState.SUBMITTING };
@@ -509,7 +506,6 @@ type FormAction<FORM_DATA> =
       case ActionType.VALIDATE:
         {
           const newState= doValidation(state, action.dispatch, action.validate);
-          console.log(`new State : ${JSON.stringify(newState)}`);
           return newState;
         }
       case ActionType.FIELD_VISITED:
@@ -552,20 +548,11 @@ export function useFormInternal<FORM_DATA extends IndexType>(
   parentForm?: ParentFormAdapter
 
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
-  console.log('Use Form called.');
-  //  let newArray = (currentState.values[path] as []).filter((e, myIdx) => idx !== myIdx);
-  //  return setValueOnState(path, newArray, currentState, null);
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
-
-
- 
-  console.log(`${logPrefix} now using reducer`)
   const fr:Reducer<State<FORM_DATA>, FormAction<FORM_DATA>> = formReducer;
   const [state, dispatch] = useReducer(fr, initialState);
   const [subFormStates, setSubFormStates] = useState(initialSubFormStates);
   const overallValidationState = calcValidationState(state, subFormStates);
-
-  console.log(`${formname} (${logPrefix}) submitstate: ${SubmitState[state.submitState]} subFormStates valid? ${subFormStates.allValid()}}`)
 
   // Es sollte einen status für validation geben: invalid, valid, validation_in_progress.
   // wenn Submitting && alle Kinder valid -> submit
@@ -576,16 +563,14 @@ export function useFormInternal<FORM_DATA extends IndexType>(
       if (state.submitState === SubmitState.SUBMITTING) {
         if (overallValidationState === ValidationState.VALID) {
           dispatch({ actionType: ActionType.END_SUBMIT });
-          submit(state.values as any /* TODO */);
+          submit(state.values as any);
         } else if (overallValidationState === ValidationState.INVALID) {
-          console.log('Submit aborted.');
           dispatch({ actionType: ActionType.END_SUBMIT });
         } else {
-          console.log('Validation in progress. Waiting...');
+          console.trace('Validation in progress. Waiting...');
         }
       }
     } else {
-      console.log(`${formname} (${logPrefix}) invoking onValidChange ${isValid(state, formname)} subFormStates: ${subFormStates}`);
       parentForm.onValidChange(overallValidationState);
       parentForm.onChange(state.values);
     }
@@ -593,12 +578,7 @@ export function useFormInternal<FORM_DATA extends IndexType>(
   useEffect(() => {
 
     if (!state.validated) {
-      console.log(logPrefix + ' dispatching initial validate');
       dispatch({ actionType: ActionType.VALIDATE, dispatch, validate })
-      // TODO
-      //      if (parentForm) {
-      //        parentForm.onValidChange(calcValidationState(newState, subFormStates));
-      //      }
     }
 
   }, [state.validated]);
@@ -640,9 +620,6 @@ export function useFormInternal<FORM_DATA extends IndexType>(
   }
 
   function handleSubmit(e?: SyntheticEvent) {
-    console.log('-----------------------------------------------------');
-    console.log('submitting');
-    console.log('-----------------------------------------------------');
     dispatch({ actionType: ActionType.SUBMIT });
   }
   //
@@ -689,10 +666,7 @@ export function useFormInternal<FORM_DATA extends IndexType>(
             sfs.setSubFormState(pathString, newValid);
             return new SubFormStates(sfs);
           });
-        } else {
-          console.log(`${formname} (${logPrefix}) SubFormState for path ${pathString} remains ${newValid}`);
-
-        }
+        } 
       },
       onChange: (newValue: TYPE) => {
         let oldValue;
@@ -743,7 +717,7 @@ export function useFormInternal<FORM_DATA extends IndexType>(
 
   }
   const overallFormState: OverallState<FORM_DATA> = {
-    hasErrors: !(isValid(state, formname) && subFormStates.allValid()),
+    hasErrors: !(isValid(state) && subFormStates.allValid()),
     values: state.values,
     errors: state.errors,
     setValue: setValue,
