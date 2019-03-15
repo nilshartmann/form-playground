@@ -1,5 +1,263 @@
 import { useReducer, SyntheticEvent, useEffect, useState, Reducer } from "react";
-import { number } from "prop-types";
+
+// ##############################################################################
+// Public interfaces 
+// ##############################################################################
+
+/**
+ * A hook that creates everything that's required for building a form.
+ * 
+ * @param validate a validator function for your form
+ * @param fields the initial value of the form
+ * @param submit the function to be executed on submit if the form state is valid
+ * @param valueCreators an (optional) object which contains creator functions for array based fields
+ */
+export function useForm<FORM_DATA>(
+  formname: string,
+  validate: ValidateFn<FORM_DATA>,
+  fields: Fields<FORM_DATA>,
+  submit: (values: Fields<FORM_DATA>) => void,
+  valueCreators: ValueCreators<FORM_DATA> = {},
+  parentForm?: ParentFormAdapter
+): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
+  return useFormInternal(formname, validate, fields, submit, valueCreators, createInitialState(fields), new SubFormStates(), parentForm);
+}
+
+/**
+ * A validator function validates all the forms values. Important: The validators are called _very_ often. At least after
+ * any change in any of your form's fields. So while implementing those: Be sure to make them as fast as possible. For example
+ * a serverside validation should only be triggered when all the values are plausible, and answers should be cached. This however
+ * is something that the form, not this hook, must do!
+ * 
+ * @param newValues the current form's values
+ * @param isVisited a function to check if the field was visited
+ * @param recordError an ErrorRecorder to record the errors
+ * @param validateDelayed a function to register a delayed validator
+ */
+export type ValidateFn<FIELDS> = (
+  newValues: Partial<FIELDS>,
+  isVisited: isFieldVisitedFunction<FIELDS>,
+  recordError: RecordError<FIELDS>,
+  recordErrorDelayed: RecordErrorAsync<FIELDS>
+) => void;
+
+type Fields<FIELDS> = { [P in keyof FIELDS]: any };
+
+/**
+ * Each complex element that is used in an array within the form's data model, must be created by a ValueCreator function,
+ * which must be registered in here.
+ */
+export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
+
+/**
+ * A funtion that 'records' an error.
+ * @param field to which field does the error belong?
+ * @param message the error message to be recorded
+ * @param exclusive if true any other previously recorded errors will be overwritten
+ * 
+ */
+export type RecordError<FIELDS> =
+  (field: Path<FIELDS>, msg: string, exclusive?: boolean) => void;
+  /**
+ * A funtion that 'records' an error asynchronously. The promise must resolve to a message if an the field in Path is invalid,
+ * or resolve to null otherwise.
+ * @param field to which field does the error belong?
+ * @param a promise which can resolve to a validation-failed message
+ * 
+ */
+export type RecordErrorAsync<FIELDS> =
+  (field: Path<FIELDS>, msg: Promise<string | null>) => void;
+
+/**
+ * The overall state of a form
+ */
+export type OverallState<FIELDS> = {
+  /**
+   * Are any errors present 
+   * TODO: this needs a more specific definition
+   */
+    hasErrors: boolean;
+    /**
+     * Has a submit been requested at least once (turns to to true at the first attempt and stays true from then)
+     */
+    submitRequested: boolean;
+    /**
+     * all the validation errors in the form
+     */
+    errors: FormErrors<FIELDS>;
+    /**
+     * the currently collected values form the form's fields
+     */
+    values: Partial<FIELDS>;
+    /**
+     * a function to set a value on a field. 
+     * TODO: is this still required
+     */
+    setValue: (field: keyof FIELDS, value: string) => void;
+    /**
+     * The submit handler function. Must be called to submit your form values. If everything validates this function will call 
+     * the function <code>submit</code> passed to useForm.
+     */ 
+    handleSubmit: (e: SyntheticEvent) => void;
+  };
+  /**
+   * A type that consists of any subset of props in T
+   */
+  export type Partial<T> = { [P in keyof T]: T[P] };
+  /**
+   * the errors in the form. 
+   * TODO explain the key format.
+   */
+  export type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
+
+  /**
+   * An object providing everything neccessary to connect your form's GUI to this hook.
+   */
+  export interface Form<FORM_DATA> {
+    /**
+     * a function to create the neccessary callbacks for HTML-input Fields. Use it like this:
+     * 
+     * <input {...input('somfieldsname')} />
+     * 
+     * @see FormInputFieldPropsProducer for more information.
+     */
+    input: FormInputFieldPropsProducer<FormFieldInput, FORM_DATA>;
+    /**
+     * a function to create the neccessary callbacks for components which let the user edit array like fields. Use it like this:
+     * 
+     * <MyCustomMultiEditorComponent {...mulit('somfieldsname')} />
+     * 
+     * @see FormInputFieldPropsProducer for more information.
+     */
+    multi: FormInputFieldPropsProducer<MultiFormInput<any>, FORM_DATA>;
+    /**
+     * a function to create the neccessary callbacks for custom input components, like a select-box with suggestions. Use it like this:
+     * 
+     * <SuggestionSelectBox {...custom('somfieldsname')} />
+     * 
+     * @see FormInputFieldPropsProducer for more information.
+     */
+    custom: FormInputFieldPropsProducer<CustomObjectInput<any>, FORM_DATA>;
+    /**
+     * Returns an adapter which can be used to connect a child form to this form. This is helpful if you are building partial forms
+     * with their own validations, that should be reused in larger forms. E.g. an address-form which has it's own address validation
+     * but is included in your order form and your customers registration form.
+     * @param key the key in your parents form where the data from the sub form resides.
+     */
+    getParentFormAdapter: (key: keyof FORM_DATA) => ParentFormAdapter;
+  }
+  
+/**
+ * Properties for editors for array based fields
+ */
+export interface MultiFormInput<ARRAY_CONTENT_TYPE> extends FormField<Array<ARRAY_CONTENT_TYPE>> {
+  /**
+   * Must be called everytime an element of the array is changed.
+   * @param element modified element
+   * @param idx the index in the array
+   */
+  onValueUpdate: (element: ARRAY_CONTENT_TYPE, idx: number) => void;
+  /**
+   * Must be called to remove an element of the array.
+   * @param idx the index in the array
+   */
+  onRemove: (idx: number) => void;
+  /**
+   * Must be called to add a new element to the array. The element is created by an  .
+   * @param idx the index in the array
+   */
+  onAdd: () => void;
+  /**
+   * returns a <code>ParentFormAdapter</code> for the specific element. Use this for elements
+   * that require a sub-form.
+   * 
+   * @param the element's index.
+   */
+  getParentFormAdapter: (idx: number) => ParentFormAdapter;
+}
+/**
+ * A parentFormAdapter is a bridge between a child form and it's parent. Any form can be 'connected'
+ * to another form. By doing so the validation process of both the forms is combined so that a submit
+ * is only possible when both the child and the parent are valid.
+ * 
+ * Instances of this adapter should not be created by user code, but only by the useForm hook. They must
+ * be passed unmodified to the child form to ensure proper functionality. 
+ */
+export interface ParentFormAdapter {
+  state: SubmitState;
+  submitRequested: boolean;
+  onValidChange: (newValidationState: ValidationState) => void;
+  onChange: (newValue: any) => void
+}
+
+/**
+ * Base values for a FormField
+ */
+export interface FormField<T> {
+  /**
+   * the current value of this FormField
+   */
+  value: T;
+  /** 
+   * The error messages currently associated with this form field. 
+  */
+  errorMessages: any;
+  /**
+   * The FormField's name (corresponds to the object's property this filed manages)
+   */
+  name: string;
+  /**
+   * Is the validation for this field in progress.
+   */
+  validating: boolean;
+  /**
+   * Is the form this field belongs to submitting
+   */
+  submitting: boolean;
+  /**
+   * has this field been 'visited'? This is true if the field gained and lost focus once.
+   */
+  visited: boolean;
+}
+/**
+* Properties for HTMLInputFields.
+*/
+export interface FormFieldInput extends FormField<any> {
+  /**
+   * the onChange function, should be attached to the input field's onChange property.
+   */
+  onChange: HTMLInputEventEmitter;
+  /**
+   * the onBlur function, should be attached to the input field's onBlur property.
+   */
+  onBlur: HTMLFocusEventEmitter;
+};
+
+/**
+ * Props for custom editors for any values other than primitive types such as boolean, string or number.
+ */
+export interface CustomObjectInput<T> extends FormField<T> {
+  /**
+   * This callback has to be called everytime the input changes
+   */
+  onValueChange: InputEventEmitter;
+  /**
+   * This callback has to be called everytime the input isBlurred.
+   */
+  onBlurChange: FocusEventEmitter
+}
+
+/**
+ * A FormInputFieldPropsProducer creates an object which contains functions for adapting an input
+ * element (be it a HTML-input field or a custom input field) to the form.
+ * @param R the type of the FormField. Since this is a generic function the concrete output must
+ * is specified by this type
+ * @param FORM_DATA the type of the object, which the form that uses the objects created here, 
+ * manages.
+ */
+export type FormInputFieldPropsProducer<R extends FormField<any>, FORM_DATA> =
+  (key: keyof FORM_DATA) => R;
+
 
 //
 // Validation Helpers ###########################################################
@@ -80,70 +338,12 @@ function buildNewStateAfterAsyncValidation<FIELDS>(
 }
 
 
-type Fields<FIELDS> = { [P in keyof FIELDS]: any };
-type Partial<T> = { [P in keyof T]: T[P] };
-
-type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
-type Validating<FIELDS> = { [P in keyof FIELDS | string]?: Promise<string | null>[] };
-type FormErrors<FIELDS> = { [P in keyof FIELDS | string]?: string[] | null };
-
-
-/**
- * Each complex element that is used in an array within the form's data model, must be created by a ValueCreator function,
- * which must be registered in here.
- */
-export type ValueCreators<FIELDS> = { [P in keyof FIELDS]?: () => object };
-
-/**
- * A funtion that 'records' an error.
- * @param field to which field does the error belong?
- * @param message the error message to be recorded
- * @param exclusive if true any other previously recorded errors will be overwritten
- * 
- */
-export type RecordError<FIELDS> =
-  (field: Path<FIELDS>, msg: string, exclusive?: boolean) => void;
-export type RecordErrorAsync<FIELDS> =
-  (field: Path<FIELDS>, msg: Promise<string | null>) => void;
 
 
 
 
-export type isFieldVisitedFunction<FIELDS> = (fieldName: Path<FIELDS>) => boolean;
 
-/**
- * A validator function validates all the forms values.
- * 
- * @param newValues the current form's values
- * @param isVisited a function to check if the field was visited
- * @param recordError an ErrorRecorder to record the errors
- * @param validateDelayed a function to register a delayed validator
- */
-export type ValidateFn<FIELDS> = (
-  newValues: Partial<FIELDS>,
-  isVisited: isFieldVisitedFunction<FIELDS>,
-  recordError: RecordError<FIELDS>,
-  recordErrorDelayed: RecordErrorAsync<FIELDS>
-) => void;
 
-export enum ValidationState {
-  VALID, VALIDATING, INVALID
-}
-
-export enum SubmitState {
-  /**
-   * initial state. no submit activity is going on.
-   */
-  NONE,
-  /**
-   * a submit has been requested by the user. The form is now doing the neccessary checks to submit.
-   */
-  INVOKE_SUBMIT,
-  /**
-   * everyting was ok. The form can be submitted, the users submit action will be invoked.
-   */
-  SUBMITTING
-}
 //
 // useFormHook ########################################################################
 //
@@ -160,13 +360,6 @@ export interface State<FIELDS> {
   validated: boolean
 }
 
-export interface Form<FORM_DATA> {
-  data: FORM_DATA,
-  input: FormInputFieldPropsProducer<FormFieldInput, any, FORM_DATA>;
-  multi: FormInputFieldPropsProducer<MultiFormInput<any>, any, FORM_DATA>;
-  custom: FormInputFieldPropsProducer<CustomObjectInput<any>, any, FORM_DATA>;
-  getParentFormAdapter: (key: keyof FORM_DATA) => ParentFormAdapter;
-}
 
 type SubFormStateMap = {
   [P: string]: ValidationState;
@@ -240,24 +433,7 @@ function calcValidationState<FORM_DATA>(state: State<FORM_DATA>, subFormStates: 
     return ValidationState.INVALID;
   }
 }
-/**
- * A hook that creates everything that's required for building a form.
- * 
- * @param validate a validator function for your form
- * @param fields the initial value of the form
- * @param submit the function to be executed on submit if the form state is valid
- * @param valueCreators an (optional) object which contains creator functions for array based fields
- */
-export function useForm<FORM_DATA>(
-  formname: string,
-  validate: ValidateFn<FORM_DATA>,
-  fields: Fields<FORM_DATA>,
-  submit: (values: Fields<FORM_DATA>) => void,
-  valueCreators: ValueCreators<FORM_DATA> = {},
-  parentForm?: ParentFormAdapter
-): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
-  return useFormInternal(formname, validate, fields, submit, valueCreators, createInitialState(fields), new SubFormStates(), parentForm);
-}
+
 
 enum ActionType {
   SUBMIT, END_SUBMIT, VALIDATE, SET_VALUE, FIELD_VISITED, MULTI_FIELD_REMOVE, MULTI_FIELD_ADD, APPLY_ERRORS_ASYNC
@@ -562,7 +738,6 @@ export function useFormInternal<FORM_DATA extends IndexType>(
   function createForm(data: FORM_DATA): Form<FORM_DATA> {
 
     return {
-      data: data,
       custom: (path: keyof FORM_DATA) => createCustomFields(path),
       multi: (path: keyof FORM_DATA) => createArrayFields(path),
       input: (path: keyof FORM_DATA) => createInputFields(path),
@@ -586,59 +761,41 @@ export function useFormInternal<FORM_DATA extends IndexType>(
   ] as [OverallState<FORM_DATA>, Form<FORM_DATA>];
 }
 
-type OverallState<FIELDS> = {
-  hasErrors: boolean;
-  submitRequested: boolean;
-  errors: FormErrors<FIELDS>;
-  values: Partial<FIELDS>;
-  setValue: (field: keyof FIELDS, value: string) => void;
-  handleSubmit: (e: SyntheticEvent) => void;
-};
+
+// ###################################################################################################
+// private types.
+// ###################################################################################################
+
 type HTMLInputEventEmitter = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
 type HTMLFocusEventEmitter = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => void;
 type InputEventEmitter = (newValue: any) => void;
 type FocusEventEmitter = () => void;
 type IndexType = { [key: string]: any }
-export interface FormField<T> {
-  value: T;
-  errorMessages: any;
-  name: string;
-  validating: boolean;
-  submitting: boolean;
-  visited: boolean;
-}
-/**
-* Properties for HTMLInputFields.
-*/
-export interface FormFieldInput extends FormField<any> {
-  onChange: HTMLInputEventEmitter;
-  onBlur: HTMLFocusEventEmitter;
-};
 
-/**
- * Props for custom editors for any values other than primitive types such as boolean, string or number.
- */
-export interface CustomObjectInput<T> extends FormField<T> {
-  onValueChange: InputEventEmitter;
-  onBlurChange: FocusEventEmitter
-}
-/**
- * Properties for editors for array based fields
- */
-export interface MultiFormInput<ARRAY_CONTENT_TYPE> extends FormField<Array<ARRAY_CONTENT_TYPE>> {
-  onValueUpdate: (pi: ARRAY_CONTENT_TYPE, idx: number) => void;
-  onRemove: (idx: number) => void;
-  onAdd: () => void;
-  getParentFormAdapter: (idx: number) => ParentFormAdapter;
+type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
+type Validating<FIELDS> = { [P in keyof FIELDS | string]?: Promise<string | null>[] };
+
+
+export type isFieldVisitedFunction<FIELDS> = (fieldName: Path<FIELDS>) => boolean;
+
+
+export enum ValidationState {
+  VALID, VALIDATING, INVALID
 }
 
-export type FormInputFieldPropsProducer<R extends FormField<T>, T extends IndexType, FORM_DATA> =
-  (key: keyof FORM_DATA) => R;
-
-export interface ParentFormAdapter {
-  state: SubmitState;
-  submitRequested: boolean;
-  onValidChange: (newValidationState: ValidationState) => void;
-  onChange: (newValue: any) => void
+export enum SubmitState {
+  /**
+   * initial state. no submit activity is going on.
+   */
+  NONE,
+  /**
+   * a submit has been requested by the user. The form is now doing the neccessary checks to submit.
+   */
+  INVOKE_SUBMIT,
+  /**
+   * everyting was ok. The form can be submitted, the users submit action will be invoked.
+   */
+  SUBMITTING
 }
+
 
