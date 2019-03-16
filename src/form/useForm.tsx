@@ -172,6 +172,8 @@ export interface MultiFormInput<ARRAY_CONTENT_TYPE> extends FormField<Array<ARRA
    * @param the element's index.
    */
   getParentFormAdapter: (idx: number) => ParentFormAdapter;
+
+  getVersion: (idx: number) => number;
 }
 /**
  * A parentFormAdapter is a bridge between a child form and it's parent. Any form can be 'connected'
@@ -199,7 +201,7 @@ export interface FormField<T> {
   /** 
    * The error messages currently associated with this form field. 
   */
-  errorMessages: any;
+  errorMessages: string[] | undefined;
   /**
    * The FormField's name (corresponds to the object's property this filed manages)
    */
@@ -347,11 +349,12 @@ export function useFormInternal<FORM_DATA extends IndexType>(
 ): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
   const logPrefix = (parentForm !== undefined) ? 'child: ' : 'parent: ';
   const [state, dispatch] = useReducer(
-    (state: State<FORM_DATA>, 
+    (state: State<FORM_DATA>,
       action: FormAction<FORM_DATA>) => {
-        console.log(`Executing action ${JSON.stringify(action)}`);
-        return action.execute(state)}, 
-      initialState);
+      console.log(`Executing action ${JSON.stringify(action)}`);
+      return action.execute(state)
+    },
+    initialState);
   const [subFormStates, setSubFormStates] = useState(initialSubFormStates);
   const overallValidationState = calcValidationState(state, subFormStates);
 
@@ -384,12 +387,14 @@ export function useFormInternal<FORM_DATA extends IndexType>(
 
   }, [state.validated]);
 
-   // 
+  // 
   // Construction of return value
   //
   function createBaseIndividualFields(path: Path<FORM_DATA>): FormField<any> {
     const value = state.values[path];
-    const newErrors = state.errors[path];
+    // TODO how to do this w/o casting?
+    let newErrors: string[] | undefined = state.errors[path] ? state.errors[path] as [] : undefined;
+    //if (newErrors === undefined) newErrors = [];
     const submitRequested = (parentForm && parentForm.submitRequested) || state.submitRequested;
     const ret: FormField<any> = {
       value: value,
@@ -419,31 +424,29 @@ export function useFormInternal<FORM_DATA extends IndexType>(
         }
       },
       onChange: (newValue: TYPE) => {
-        let oldValue;
-        if (idx !== null) {
-          oldValue = (state.values[path] as any)[idx] = newValue;
-        } else {
-          oldValue = state.values[path];
-        }
-        if (oldValue !== newValue) {
-          dispatch(new SetValueAction(path, newValue, dispatch, validate, idx));
-        }
+        dispatch(new ChangeComplexValue(path,dispatch,validate,state.values,newValue,idx));
       }
     }
     return newAdapter;
   };
 
   function createArrayFields<ARRAY_CONTENT_TYPE>(path: Path<FORM_DATA>): MultiFormInput<ARRAY_CONTENT_TYPE> {
-    const ret = createBaseIndividualFields(path) as MultiFormInput<any>;
-    ret.onRemove = (idx: number) => dispatch(new MultiFieldRemoveAction(path, idx, dispatch, validate));
-    ret.onAdd = () => dispatch(new MultiFieldAddAction(path, valueCreators, dispatch, validate));
-    ret.getParentFormAdapter = (idx: number) => getParentFormAdapterInternal<ARRAY_CONTENT_TYPE>(path, idx);
-    return ret;
+    const base = createBaseIndividualFields(path);
+    const ret = {
+      onRemove: (idx: number) => dispatch(new MultiFieldRemoveAction(path, idx, dispatch, validate)),
+      onAdd: () => dispatch(new MultiFieldAddAction(path, valueCreators, dispatch, validate)),
+      onValueUpdate: (element:ARRAY_CONTENT_TYPE, idx:number) => {
+        dispatch(new ChangeComplexValue(path,dispatch,validate,state.values,element,idx));
+      },
+      getParentFormAdapter: (idx: number) => getParentFormAdapterInternal<ARRAY_CONTENT_TYPE>(path, idx),
+      getVersion: (idx: number) => (state.versions[path] as number[])[idx]
+    }
+    return {...ret, ...base};
   }
 
   function createCustomFields(path: Path<FORM_DATA>): CustomObjectInput<any> {
     const ret = createBaseIndividualFields(path) as CustomObjectInput<any>;
-    
+
     ret.onValueChange = (newValue: any) => dispatch(new SetValueAction(path, newValue, dispatch, validate));
     ret.onBlurChange = () => dispatch(new FieldVisitedAction(path as string));
     return ret;
@@ -499,7 +502,15 @@ class MultiFieldAddAction<FORM_DATA extends IndexType> implements FormAction<FOR
     if (valueCreator) {
       const newArray = [...(initial)];
       newArray.push(valueCreator());
-      return new SetValueAction(this.path, newArray, this.dispatch, this.validate).execute(state);
+      let versions = {...state.versions};
+      let versionNumbers = versions[this.path];
+      if (versionNumbers === undefined) {
+        versions[this.path] = [0];
+      } else {
+        versionNumbers.push(0);
+      }
+      
+      return new SetValueAction(this.path, newArray, this.dispatch, this.validate).execute({...state, versions: versions});
     } else {
       console.error(`No valueCreator for ${this.path} was supplied. 
   Adding values is impossible. To change this supply 
@@ -521,13 +532,26 @@ class SetValueAction<FORM_DATA extends IndexType> implements FormAction<FORM_DAT
     let newState = { ...state };
     const newValues = Object.assign({}, state.values) as FORM_DATA;
     if (this.idx !== null) {
-      (newValues[this.path as string] as any)[this.idx] = this.newValue;
+      const valueArray = (newValues[this.path as string] as any);
+      // todo how to remove the cast?
+      const versionArray:number[] = (state.versions[this.path] !== undefined ? state.versions[this.path] : []) as number[] ;
+      valueArray[this.idx] = this.newValue;
+      const newVersions = valueArray.map((x: any,i: number) => {
+        if (versionArray[i] !== undefined) {
+           return  i===this.idx ? versionArray[i] + 1 : versionArray[i]; 
+        } else {
+          return 0;
+        } 
+      });
+      newState.versions = {...newState.versions};
+      newState.versions[this.path] = newVersions;
     } else {
       newValues[this.path as string] = this.newValue;
     }
     newState.values = newValues;
     newState = new ValidateAction(this.dispatch, this.validate).execute(newState);
     newState.submitState = SubmitState.NONE;
+    console.log(JSON.stringify(newState));
     return newState;
   }
 }
@@ -571,6 +595,28 @@ class FieldVisitedAction<FORM_DATA extends IndexType> implements FormAction<FORM
   }
 }
 
+class ChangeComplexValue<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  constructor(private path: Path<FORM_DATA>, 
+    private dispatch: React.Dispatch<FormAction<FORM_DATA>>, 
+    private validate: ValidateFn<FORM_DATA>, 
+    private oldValues: Fields<FORM_DATA>, 
+    private newValue:any, 
+    private idx:number|null = null) { }
+  execute(currentState: State<FORM_DATA>): State<FORM_DATA> {
+    let oldValue;
+        if (this.idx !== null) {
+          oldValue = (this.oldValues[this.path] as any)[this.idx];
+        } else {
+          oldValue = this.oldValues[this.path];
+        }
+        if (oldValue !== this.newValue) {
+          return new SetValueAction(this.path, this.newValue, this.dispatch, this.validate, this.idx).execute(currentState);
+        } else {
+          return currentState;
+        }
+
+  }
+}
 class ApplyErrorAsync<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
   constructor(private path: Path<FORM_DATA>, private oldValues: Fields<FORM_DATA>, private newError: string | null) { }
   execute(currentState: State<FORM_DATA>): State<FORM_DATA> {
@@ -637,6 +683,7 @@ export interface State<FIELDS> {
   submitState: SubmitState;
   fieldsVisited: FieldsVisited<FIELDS>;
   errors: FormErrors<FIELDS>,
+  versions: { [P in keyof FIELDS]?:number[]},
   validating: Validating<FIELDS>,
   validated: boolean
 }
@@ -690,6 +737,7 @@ export function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<
     errors: {},
     validating: {},
     validated: false,
+    versions: {},
     submitState: SubmitState.NONE
   }
 }
