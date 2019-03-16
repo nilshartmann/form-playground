@@ -54,6 +54,6 @@ function TestRunner<FORM_DATA extends TestData>(props: {
         console.log('validate called');
         errorRecorder('foo', 'asdfasf');
     }
-    result = useFormInternal('testform',validate, fields, () => { }, {}, initialState, initialSubFormStates,parentFormAdapter);
+    result = useFormInternal('testform',validate, () => { }, {}, initialState, initialSubFormStates,parentFormAdapter);
     return <br />
 }

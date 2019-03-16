@@ -13,14 +13,13 @@ interface LoginFormState {
 
 const validateLoginForm: ValidateFn<LoginFormState> = function(
   newFormInput,
-  isVisited,
   recordError
 ) {
-  if (isVisited("username") && newFormInput.username.length < 1) {
+  if (newFormInput.username.length < 1) {
     recordError("username", "Please enter your username");
   }
 
-  if (isVisited("password") && newFormInput.password.length < 1) {
+  if (newFormInput.password.length < 1) {
     recordError("password", "Please enter your password");
   }
 };
