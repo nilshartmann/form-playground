@@ -6,7 +6,7 @@ import { Input } from "./form/Input";
 import { isEqual } from "lodash";
 
 // Form Logic
-import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, RecordErrorAsync, CustomObjectInput, ParentFormAdapter, isFieldVisitedFunction } from "./form/useForm";
+import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, RecordErrorAsync, CustomObjectInput, ParentFormAdapter } from "./form/useForm";
 
 interface Drink {
   name: string;
@@ -136,7 +136,7 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
     <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
     {
       props.value.map((pi: Pizza, idx: number) =>
-        < PizzaEditor initialValue={pi} parentForm={props.getParentFormAdapter(idx)} key={idx} count={props.value.length} id={idx} onRemove={props.onRemove} />
+        <MemoPizzaEditor initialValue={pi} parentForm={props.getParentFormAdapter(idx)} key={idx} count={props.value.length} id={idx} onRemove={props.onRemove} />
       )
     }
     <ErrorDisplay visited={props.visited} errorMessages={props.errorMessages} />
