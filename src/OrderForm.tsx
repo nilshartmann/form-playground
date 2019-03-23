@@ -6,7 +6,7 @@ import { Input } from "./form/Input";
 import { isEqual } from "lodash";
 
 // Form Logic
-import { ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, RecordErrorAsync, CustomObjectInput, ParentFormAdapter } from "./form/useForm";
+import { ValidateFn, useForm, ValueCreators, MultiFormInput, RecordError, RecordErrorAsync, CustomObjectInput, ParentFormAdapter } from "./form/useForm";
 
 interface Drink {
   name: string;
@@ -33,7 +33,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   newFormInput,
   recordError: RecordError<OrderFormState>,
   recordErrorAsync: RecordErrorAsync<OrderFormState>
-) {
+): void {
   if (newFormInput.vorname.length < 3) {
     recordError("vorname", "Der Vorname muss mindestens 3 Zeichen lang sein");
   }
@@ -45,7 +45,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
   if (newFormInput.vorname.length >= newFormInput.nachname.length) {
     recordError("nachname", "Vorname muss kürzer als Nachname sein");
   }
-  if (newFormInput.plz.length != 5) {
+  if (newFormInput.plz.length !== 5) {
     recordError("plz", "Postleitzahlen müssen fünf Ziffern haben", true);
   } else {
     if (invalidPlzCache.indexOf(newFormInput.plz) !== -1) {
@@ -54,7 +54,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
       const durationString = newFormInput.plz.charAt(4);
       const duration: number = (/[0-9]{1}/.test(durationString) ? +durationString : 5) * 1000;
 
-      const validation = async () => {
+      const validation = async ():Promise<string|null> => {
         //        let fakeResponse = !newFormInput.plz.startsWith('22');
         let fakeResponse = ['22305', '22159', '22300', '22761', '22222'].indexOf(newFormInput.plz) === -1;
 
@@ -66,7 +66,7 @@ const validatePizzaForm: ValidateFn<OrderFormState> = function (
           plzCache.push(newFormInput.plz);
           return null;
         }
-      }
+      };
 
       recordErrorAsync("plz", validation());
 
@@ -106,7 +106,7 @@ interface OrderFormProps {
   submit: (values: OrderFormState) => void;
 }
 
-export default function OrderForm(props: OrderFormProps) {
+export default function OrderForm(props: OrderFormProps):React.ReactElement {
   const [overallFormState, form] = useForm<OrderFormState>('order form', validatePizzaForm, initialValues, props.submit, valueCreators);
   const { input, multi, custom } = form;
   return  (
@@ -131,7 +131,7 @@ export default function OrderForm(props: OrderFormProps) {
 
 
 
-function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
+function MultiPizzaEditor(props: MultiFormInput<Pizza>):React.ReactElement {
   return <div>
     <button onClick={() => props.onAdd()}>Pizza hinzufügen</button>
     {
@@ -143,8 +143,7 @@ function MultiPizzaEditor(props: MultiFormInput<Pizza>) {
   </div>
 }
 const validatePizza: ValidateFn<Pizza> = (newValues,
-  recordError: RecordError<Pizza>,
-  recordErrorDelayed: RecordErrorAsync<Pizza>) => {
+  recordError: RecordError<Pizza>):void => {
   if (newValues.groesse > 5000) {
     recordError('groesse', 'Eine Pizza darf maximal 50 cm groß sein');
   }
@@ -157,9 +156,9 @@ interface PizzaEditorProps {
   onRemove: (idx: number) => void,
   initialValue: Pizza
 }
-function PizzaEditor(props: PizzaEditorProps) {
-  const [overallFormState, form] = useForm<Pizza>('pizzaForm', validatePizza, props.initialValue, () => { }, {}, props.parentForm);
-  const { input, multi, custom } = form;
+function PizzaEditor(props: PizzaEditorProps):React.ReactElement {
+  const form = useForm<Pizza>('pizzaForm', validatePizza, props.initialValue, () => { }, {}, props.parentForm)[1];
+  const { input, custom } = form;
   console.log('Pizza editor render');
   return <div>
     <Input label="Größe" {...input('groesse')} />
@@ -179,11 +178,11 @@ interface PizzaDetails {
   gutscheincode: string;
   nochwas: string;
 }
-async function validatePizzaDetails(newValues: PizzaDetails,
+function validatePizzaDetails(newValues: PizzaDetails,
   recordError: RecordError<PizzaDetails>,
-  recordErrorDelayed: RecordErrorAsync<PizzaDetails>) {
+  recordErrorDelayed: RecordErrorAsync<PizzaDetails>): void {
     if (newValues.nochwas.length > 0) {
-      const validation = async () => {
+      const validation = async ():Promise<string|null> => {
         let invalid = await fetchMock(newValues.nochwas.startsWith('a'), 3000);
         if (invalid) {
           return 'Das ist nicht ok';
@@ -197,7 +196,7 @@ async function validatePizzaDetails(newValues: PizzaDetails,
     if (newValues.gutscheincode.length < 3) {
       recordError('gutscheincode', 'Muss immer mindestens drei Zeichen lang sein');
     } else {
-      const validation = async () => {
+      const validation = async ():Promise<string|null> => {
         let invalid = await fetchMock(newValues.gutscheincode.startsWith('a'), 4000);
         if (invalid) {
           return 'Gutscheincode nicht ok';
@@ -210,10 +209,10 @@ async function validatePizzaDetails(newValues: PizzaDetails,
   }
 }
 
-function PizzaDetailsEditor(props: PizzaDetailsProps) {
+function PizzaDetailsEditor(props: PizzaDetailsProps):React.ReactElement {
   const initalPizzaDetails: PizzaDetails = { sauce: 'Classic', gutscheincode: '', nochwas: '' };
   const [overallFormState, form] = useForm<PizzaDetails>('PizzaDetails', validatePizzaDetails, initalPizzaDetails, () => { }, {}, props.parentForm);
-  const { input, multi, custom } = form;
+  const { input } = form;
   const sauceInput = input('sauce');
   return <div>
     <Input label="Gutscheincode" {...input('gutscheincode')} />
@@ -246,11 +245,11 @@ const drinks: Drink[] = [
   { name: 'Bier', size: 'groß' },
 
 ];
-function DrinksEditor(props: CustomObjectInput<Drink[]>) {
-  const remove = (idx: number) => {
+function DrinksEditor(props: CustomObjectInput<Drink[]>): React.ReactElement {
+  const remove = (idx: number):Drink[] => {
     return props.value.filter((d, i) => i !== idx);
   }
-  const add = (drink: Drink) => {
+  const add = (drink: Drink):Drink[] => {
     return props.value.concat(drink);
   }
 
@@ -274,11 +273,11 @@ function DrinksEditor(props: CustomObjectInput<Drink[]>) {
 
 
 const alleBelaege = ["Oliven", "Feta", "Zwiebeln", "Mais", "Pilze"];
-function BelagEditor(props: CustomObjectInput<string[]>) {
-  const remove = (idx: number) => {
+function BelagEditor(props: CustomObjectInput<string[]>):React.ReactElement {
+  const remove = (idx: number):string[] => {
     return props.value.filter((d, i) => i !== idx);
   }
-  const add = (belag: string) => {
+  const add = (belag: string):string[] => {
     return props.value.concat(belag);
   }
 
