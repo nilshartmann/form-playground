@@ -160,6 +160,7 @@ interface PizzaEditorProps {
 function PizzaEditor(props: PizzaEditorProps) {
   const [overallFormState, form] = useForm<Pizza>('pizzaForm', validatePizza, props.initialValue, () => { }, {}, props.parentForm);
   const { input, multi, custom } = form;
+  console.log('Pizza editor render');
   return <div>
     <Input label="Größe" {...input('groesse')} />
     <BelagEditor {...custom('belaege')} />
@@ -293,7 +294,7 @@ function BelagEditor(props: CustomObjectInput<string[]>) {
   </div>
 }
 
-const MemoPizzaEditor = React.memo(PizzaEditor, (oldProps, newProps) => {
-  const ret = oldProps.count === newProps.count && isEqual(oldProps.initialValue, newProps.initialValue);
+const MemoPizzaEditor = React.memo(PizzaEditor, (oldProps: PizzaEditorProps, newProps:PizzaEditorProps) => {
+  const ret = oldProps.parentForm.submitRequested === newProps.parentForm.submitRequested && oldProps.count === newProps.count && isEqual(oldProps.initialValue, newProps.initialValue);
   return ret;
 });

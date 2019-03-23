@@ -3,7 +3,7 @@ import OrderForm from "./OrderForm";
 import LoginForm from "./LoginForm";
 
 class App extends Component {
-  render() {
+  public render() {
     return (
       <>
         <header>

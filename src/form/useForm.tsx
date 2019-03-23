@@ -1,27 +1,7 @@
-import { useReducer, SyntheticEvent, useEffect, useState, Reducer } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useReducer, SyntheticEvent, useEffect, useState } from "react";
 
-// ##############################################################################
-// Public interfaces 
-// ##############################################################################
 
-/**
- * A hook that creates everything that's required for building a form.
- * 
- * @param validate a validator function for your form
- * @param fields the initial value of the form
- * @param submit the function to be executed on submit if the form state is valid
- * @param valueCreators an (optional) object which contains creator functions for array based fields
- */
-export function useForm<FORM_DATA>(
-  formname: string,
-  validate: ValidateFn<FORM_DATA>,
-  fields: Fields<FORM_DATA>,
-  submit: (values: Fields<FORM_DATA>) => void,
-  valueCreators: ValueCreators<FORM_DATA> = {},
-  parentForm?: ParentFormAdapter
-): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
-  return useFormInternal(formname, validate, submit, valueCreators, createInitialState(fields), new SubFormStates(), parentForm);
-}
 
 /**
  * A validator function validates all the forms values. Important: The validators are called _very_ often. At least after
@@ -69,7 +49,7 @@ export type RecordErrorAsync<FIELDS> =
 /**
  * The overall state of a form
  */
-export type OverallState<FIELDS> = {
+export interface OverallState<FIELDS> {
   /**
    * Are any errors present 
    * TODO: this needs a more specific definition
@@ -148,7 +128,7 @@ export interface Form<FORM_DATA> {
 /**
  * Properties for editors for array based fields
  */
-export interface MultiFormInput<ARRAY_CONTENT_TYPE> extends FormField<Array<ARRAY_CONTENT_TYPE>> {
+export interface MultiFormInput<ARRAY_CONTENT_TYPE> extends FormField<ARRAY_CONTENT_TYPE[]> {
   /**
    * Must be called everytime an element of the array is changed.
    * @param element modified element
@@ -259,6 +239,271 @@ export type FormInputFieldPropsProducer<R extends FormField<any>, FORM_DATA> =
   (key: keyof FORM_DATA) => R;
 
 
+
+
+
+// ###################################################################################################
+// private types.
+// ###################################################################################################
+
+// eslint-disable-next-line @typescript-eslint/prefer-interface
+type IndexType = { [key: string]: any }
+type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
+type Validating<FIELDS> = { [P in keyof FIELDS | string]?: Promise<string | null>[] };
+
+export enum ValidationState {
+  VALID, VALIDATING, INVALID
+}
+
+export enum SubmitState {
+  /**
+   * initial state. no submit activity is going on.
+   */
+  NONE,
+  /**
+   * a submit has been requested by the user. The form is now doing the neccessary checks to submit.
+   */
+  INVOKE_SUBMIT,
+  /**
+   * everyting was ok. The form can be submitted, the users submit action will be invoked.
+   */
+  SUBMITTING
+}
+
+/**
+ * Internal State - Exported for Test only! Do not use in production!
+ */
+export interface State<FIELDS> {
+  values: Fields<FIELDS>;
+  submitRequested: boolean;
+  submitState: SubmitState;
+  fieldsVisited: FieldsVisited<FIELDS>;
+  errors: FormErrors<FIELDS>,
+  versions: { [P in keyof FIELDS]?:number[]},
+  validating: Validating<FIELDS>,
+  validated: boolean
+}
+
+type Path<FORM_DATA> = keyof FORM_DATA;
+
+interface SubFormStateMap {
+  [P: string]: ValidationState;
+}
+/**
+ * Internal class for the SubFormStates. Do not use in user code!
+ */
+export class SubFormStates {
+  public getState(path: string): ValidationState | undefined {
+    return this.subFormStateMap[path];
+  }
+  private readonly subFormStateMap: SubFormStateMap;
+  public constructor(data?: SubFormStates) {
+    if (data) {
+      this.subFormStateMap = data.subFormStateMap;
+    } else {
+      this.subFormStateMap = {};
+    }
+  }
+  public validating(): boolean {
+    const subFormStates = Object.values(this.subFormStateMap);
+    return subFormStates.some((subFormState: ValidationState) => subFormState === ValidationState.VALIDATING);
+  }
+  public setSubFormState(name: string, newState: ValidationState):void {
+    this.subFormStateMap[name] = newState;
+  }
+  public allValid(): boolean {
+    const subFormStates = Object.values(this.subFormStateMap);
+    return subFormStates.length === 0 || !subFormStates.some((subFormState: ValidationState) => subFormState !== ValidationState.VALID);
+  }
+
+  public toString():string {
+    return '[SubFormState: ' + JSON.stringify(this.subFormStateMap) + ']';
+  }
+}
+
+/**
+ * Function to create the complex inital state. Exported only for testing purposes.
+ * @param fields 
+ */
+export function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<FORM_DATA> {
+  return {
+    values: fields,
+    submitRequested: false,
+    fieldsVisited: {},
+    errors: {},
+    validating: {},
+    validated: false,
+    versions: {},
+    submitState: SubmitState.NONE
+  }
+}
+
+interface FormAction<FORM_DATA extends IndexType> {
+  execute(state: State<FORM_DATA>): State<FORM_DATA>;
+}
+
+
+
+
+// ##############################################################################
+// Actions 
+// ##############################################################################
+class ValidateAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public constructor(private dispatch: React.Dispatch<FormAction<FORM_DATA>>, private validate: ValidateFn<FORM_DATA>) { }
+  public execute(currentState: State<FORM_DATA>): State<FORM_DATA> {
+    const newErrors: FormErrors<FORM_DATA> = {};
+    const newState = { ...currentState, errors: newErrors, validated: true };
+    if (typeof this.dispatch !== 'function') {
+      // eslint-disable-next-line no-throw-literal
+      throw 'Stop ' + this.dispatch ;
+    }
+    this.validate(
+      newState.values,
+      createErrorRecorder(newErrors),
+      createAsyncErrorRecorder(newState, this.dispatch)
+    );
+    return newState;
+  }
+}
+
+class SetValueAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public constructor(private path: Path<FORM_DATA>, private newValue: any, private dispatch: React.Dispatch<FormAction<FORM_DATA>>, private validate: ValidateFn<FORM_DATA>, private idx: number | null = null) { }
+  public execute(state: State<FORM_DATA>):State<FORM_DATA> {
+    let newState = { ...state };
+    const newValues = Object.assign({}, state.values) as FORM_DATA;
+    if (this.idx !== null) {
+      const valueArray = (newValues[this.path as string] as any);
+      // todo how to remove the cast?
+      const versionArray:number[] = (state.versions[this.path] !== undefined ? state.versions[this.path] : []) as number[] ;
+      valueArray[this.idx] = this.newValue;
+      const newVersions = valueArray.map((x: any,i: number) => {
+        if (versionArray[i] !== undefined) {
+           return  i===this.idx ? versionArray[i] + 1 : versionArray[i]; 
+        } else {
+          return 0;
+        } 
+      });
+      let versions = Object.assign({}, state.versions);
+      newState.versions = versions;
+      newState.versions[this.path] = newVersions;
+    } else {
+      newValues[this.path as string] = this.newValue;
+    }
+    newState.values = newValues;
+    newState = new ValidateAction(this.dispatch, this.validate).execute(newState);
+    newState.submitState = SubmitState.NONE;
+    console.log(JSON.stringify(newState));
+    return newState;
+  }
+}
+
+class MultiFieldAddAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public constructor(private path: Path<FORM_DATA>, private valueCreators: ValueCreators<FORM_DATA>, private dispatch: React.Dispatch<FormAction<FORM_DATA>>, private validate: ValidateFn<FORM_DATA>) { }
+
+  public execute(state: State<FORM_DATA>):State<FORM_DATA> {
+    const initial: any[] = state.values[this.path] as any[];
+    // TODO das wird noch interessant.....
+    const valueCreator: (() => object) | undefined = this.valueCreators[this.path];
+    if (valueCreator) {
+      const newArray = [...(initial)];
+      newArray.push(valueCreator());
+      let versions = Object.assign({}, state.versions);
+      let versionNumbers = versions[this.path];
+      if (versionNumbers === undefined) {
+        versions[this.path] = [0];
+      } else {
+        versionNumbers.push(0);
+      }
+      
+      return new SetValueAction(this.path, newArray, this.dispatch, this.validate).execute({...state, versions: versions});
+    } else {
+      console.error(`No valueCreator for ${this.path} was supplied. 
+  Adding values is impossible. To change this supply 
+  an object with a valueCreator for ${this.path} to useForm`);
+      return state;
+    }
+  }
+}
+class MultiFieldRemoveAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public constructor(private path: Path<FORM_DATA>, private idx: number, private dispatch: React.Dispatch<FormAction<FORM_DATA>>, private validate: ValidateFn<FORM_DATA>) { }
+  public execute(state: State<FORM_DATA>):State<FORM_DATA> {
+    let newArray = (state.values[this.path] as []).filter((e, myIdx) => this.idx !== myIdx);
+    return new SetValueAction(this.path, newArray, this.dispatch, this.validate).execute(state);
+  }
+}
+
+class SubmitAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public execute(state: State<FORM_DATA>): State<FORM_DATA> {
+    return { ...state, submitRequested: true, submitState: SubmitState.SUBMITTING };
+  }
+}
+class EndSubmitAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public execute(state: State<FORM_DATA>): State<FORM_DATA> {
+    return { ...state, submitState: SubmitState.NONE };
+  }
+}
+
+class FieldVisitedAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public constructor(private fieldname: string) { }
+  public execute(state: State<FORM_DATA>): State<FORM_DATA> {
+    const newFieldsVisited: FieldsVisited<FORM_DATA> = {
+      // https://stackoverflow.com/a/51193091/6134498
+      ...(state.fieldsVisited as any),
+      [this.fieldname]: true
+    };
+    return { ...state, fieldsVisited: newFieldsVisited, submitState: SubmitState.NONE }
+  }
+}
+
+class ChangeComplexValue<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public constructor(private path: Path<FORM_DATA>, 
+    private dispatch: React.Dispatch<FormAction<FORM_DATA>>, 
+    private validate: ValidateFn<FORM_DATA>, 
+    private oldValues: Fields<FORM_DATA>, 
+    private newValue:any, 
+    private idx:number|null = null) { }
+  public execute(currentState: State<FORM_DATA>): State<FORM_DATA> {
+    let oldValue;
+        if (this.idx !== null) {
+          oldValue = (this.oldValues[this.path] as any)[this.idx];
+        } else {
+          oldValue = this.oldValues[this.path];
+        }
+        if (oldValue !== this.newValue) {
+          return new SetValueAction(this.path, this.newValue, this.dispatch, this.validate, this.idx).execute(currentState);
+        } else {
+          return currentState;
+        }
+
+  }
+}
+class ApplyErrorAsync<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
+  public constructor(private path: Path<FORM_DATA>, private oldValues: Fields<FORM_DATA>, private newError: string | null) { }
+  public execute(currentState: State<FORM_DATA>): State<FORM_DATA> {
+    //@ts-ignore
+    const validating = { ...(currentState.validating) };
+    //@ts-ignore
+    if (!validating[this.path]) {
+      return currentState;
+    }
+    const oldValue = this.oldValues[this.path];
+    const newValue = currentState.values[this.path];
+    if (newValue !== oldValue) {
+      // validated value is obsolete.
+      return currentState;
+    } else {
+      delete (validating[this.path]);
+    }
+    const newErrors: FormErrors<FORM_DATA> = Object.assign({}, currentState.errors);
+    if (this.newError) {
+      newErrors[this.path] = [this.newError];
+    } else {
+      delete newErrors[this.path];
+    }
+    return { ...currentState, validating, errors: newErrors };
+  }
+}
+
 // ##############################################################################
 // validation helpers 
 // ##############################################################################
@@ -284,8 +529,7 @@ function createErrorRecorder<FIELDS>(errors: FormErrors<FIELDS>): RecordError<FI
       // @ts-ignore
       errors[field] = [msg];
     } else {
-      // @ts-ignore
-      errors[field]!.push(msg);
+      errors[field] && (errors[field] as string[]).push(msg);
     }
   };
 }
@@ -314,9 +558,9 @@ function applyErrorAsync<FIELDS>(oldValues: Fields<FIELDS>,
   };
 }
 
-function calcValidationState<FORM_DATA>(state: State<FORM_DATA>, subFormStates: SubFormStates) {
+function calcValidationState<FORM_DATA>(state: State<FORM_DATA>, subFormStates: SubFormStates):ValidationState {
   const pendingPromises: Promise<string | null>[] = [];
-  Object.values(state.validating).map((values: Promise<string | null>[] | undefined) => {
+  Object.values(state.validating).forEach((values: Promise<string | null>[] | undefined):void => {
     if (values) {
       pendingPromises.push(...values);
     }
@@ -328,6 +572,30 @@ function calcValidationState<FORM_DATA>(state: State<FORM_DATA>, subFormStates: 
   } else {
     return ValidationState.INVALID;
   }
+}
+
+
+// ##############################################################################
+// Public interfaces 
+// ##############################################################################
+
+/**
+ * A hook that creates everything that's required for building a form.
+ * 
+ * @param validate a validator function for your form
+ * @param fields the initial value of the form
+ * @param submit the function to be executed on submit if the form state is valid
+ * @param valueCreators an (optional) object which contains creator functions for array based fields
+ */
+export function useForm<FORM_DATA>(
+  formname: string,
+  validate: ValidateFn<FORM_DATA>,
+  fields: Fields<FORM_DATA>,
+  submit: (values: Fields<FORM_DATA>) => void,
+  valueCreators: ValueCreators<FORM_DATA> = {},
+  parentForm?: ParentFormAdapter
+): [OverallState<FORM_DATA>, Form<FORM_DATA>] {
+  return useFormInternal(formname, validate, submit, valueCreators, createInitialState(fields), new SubFormStates(), parentForm);
 }
 
 // ##############################################################################
@@ -377,15 +645,16 @@ export function useFormInternal<FORM_DATA extends IndexType>(
     } else {
       parentForm.onValidChange(overallValidationState);
       parentForm.onChange(state.values);
-    }
-  }, [state.submitState, state.values, overallValidationState]);
+    } 
+  }, [state.submitState, submit, state.values, parentForm, overallValidationState]);
+
   useEffect(() => {
 
     if (!state.validated) {
       dispatch(new ValidateAction(dispatch, validate));
     }
 
-  }, [state.validated]);
+  }, [state.validated, validate]);
 
   // 
   // Construction of return value
@@ -408,7 +677,7 @@ export function useFormInternal<FORM_DATA extends IndexType>(
     return ret;
   }
 
-  function getParentFormAdapterInternal<TYPE>(path: Path<FORM_DATA>, idx: number | null) {
+  function getParentFormAdapterInternal<TYPE>(path: Path<FORM_DATA>, idx: number | null):ParentFormAdapter {
     const newAdapter: ParentFormAdapter = {
       state: state.submitState,
       submitRequested: state.submitRequested || (parentForm !== undefined && parentForm.submitRequested),
@@ -486,262 +755,3 @@ export function useFormInternal<FORM_DATA extends IndexType>(
 }
 
 
-
-// ##############################################################################
-// Actions 
-// ##############################################################################
-
-
-class MultiFieldAddAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  constructor(private path: Path<FORM_DATA>, private valueCreators: ValueCreators<FORM_DATA>, private dispatch: React.Dispatch<FormAction<FORM_DATA>>, private validate: ValidateFn<FORM_DATA>) { }
-
-  execute(state: State<FORM_DATA>) {
-    const initial: any[] = state.values[this.path] as any[];
-    // TODO das wird noch interessant.....
-    const valueCreator: (() => object) | undefined = this.valueCreators[this.path];
-    if (valueCreator) {
-      const newArray = [...(initial)];
-      newArray.push(valueCreator());
-      let versions = {...state.versions};
-      let versionNumbers = versions[this.path];
-      if (versionNumbers === undefined) {
-        versions[this.path] = [0];
-      } else {
-        versionNumbers.push(0);
-      }
-      
-      return new SetValueAction(this.path, newArray, this.dispatch, this.validate).execute({...state, versions: versions});
-    } else {
-      console.error(`No valueCreator for ${this.path} was supplied. 
-  Adding values is impossible. To change this supply 
-  an object with a valueCreator for ${this.path} to useForm`);
-      return state;
-    }
-  }
-}
-class MultiFieldRemoveAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  constructor(private path: Path<FORM_DATA>, private idx: number, private dispatch: React.Dispatch<FormAction<FORM_DATA>>, private validate: ValidateFn<FORM_DATA>) { }
-  execute(state: State<FORM_DATA>) {
-    let newArray = (state.values[this.path] as []).filter((e, myIdx) => this.idx !== myIdx);
-    return new SetValueAction(this.path, newArray, this.dispatch, this.validate).execute(state);
-  }
-}
-class SetValueAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  constructor(private path: Path<FORM_DATA>, private newValue: any, private dispatch: React.Dispatch<FormAction<FORM_DATA>>, private validate: ValidateFn<FORM_DATA>, private idx: number | null = null) { }
-  execute(state: State<FORM_DATA>) {
-    let newState = { ...state };
-    const newValues = Object.assign({}, state.values) as FORM_DATA;
-    if (this.idx !== null) {
-      const valueArray = (newValues[this.path as string] as any);
-      // todo how to remove the cast?
-      const versionArray:number[] = (state.versions[this.path] !== undefined ? state.versions[this.path] : []) as number[] ;
-      valueArray[this.idx] = this.newValue;
-      const newVersions = valueArray.map((x: any,i: number) => {
-        if (versionArray[i] !== undefined) {
-           return  i===this.idx ? versionArray[i] + 1 : versionArray[i]; 
-        } else {
-          return 0;
-        } 
-      });
-      newState.versions = {...newState.versions};
-      newState.versions[this.path] = newVersions;
-    } else {
-      newValues[this.path as string] = this.newValue;
-    }
-    newState.values = newValues;
-    newState = new ValidateAction(this.dispatch, this.validate).execute(newState);
-    newState.submitState = SubmitState.NONE;
-    console.log(JSON.stringify(newState));
-    return newState;
-  }
-}
-
-class SubmitAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  execute(state: State<FORM_DATA>): State<FORM_DATA> {
-    return { ...state, submitRequested: true, submitState: SubmitState.SUBMITTING };
-  }
-}
-class EndSubmitAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  execute(state: State<FORM_DATA>): State<FORM_DATA> {
-    return { ...state, submitState: SubmitState.NONE };
-  }
-}
-class ValidateAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  constructor(private dispatch: React.Dispatch<FormAction<FORM_DATA>>, private validate: ValidateFn<FORM_DATA>) { }
-  execute(currentState: State<FORM_DATA>): State<FORM_DATA> {
-    const newErrors: FormErrors<FORM_DATA> = {};
-    const newState = { ...currentState, errors: newErrors, validated: true };
-    if (typeof this.dispatch !== 'function') {
-      throw 'Stop ' + this.dispatch;
-    }
-    this.validate(
-      newState.values,
-      createErrorRecorder(newErrors),
-      createAsyncErrorRecorder(newState, this.dispatch)
-    );
-    return newState;
-  }
-}
-
-class FieldVisitedAction<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  constructor(private fieldname: string) { }
-  execute(state: State<FORM_DATA>): State<FORM_DATA> {
-    const newFieldsVisited = {
-      // https://stackoverflow.com/a/51193091/6134498
-      ...(state.fieldsVisited as any),
-      [this.fieldname]: true
-    } as FieldsVisited<FORM_DATA>;
-    return { ...state, fieldsVisited: newFieldsVisited, submitState: SubmitState.NONE }
-  }
-}
-
-class ChangeComplexValue<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  constructor(private path: Path<FORM_DATA>, 
-    private dispatch: React.Dispatch<FormAction<FORM_DATA>>, 
-    private validate: ValidateFn<FORM_DATA>, 
-    private oldValues: Fields<FORM_DATA>, 
-    private newValue:any, 
-    private idx:number|null = null) { }
-  execute(currentState: State<FORM_DATA>): State<FORM_DATA> {
-    let oldValue;
-        if (this.idx !== null) {
-          oldValue = (this.oldValues[this.path] as any)[this.idx];
-        } else {
-          oldValue = this.oldValues[this.path];
-        }
-        if (oldValue !== this.newValue) {
-          return new SetValueAction(this.path, this.newValue, this.dispatch, this.validate, this.idx).execute(currentState);
-        } else {
-          return currentState;
-        }
-
-  }
-}
-class ApplyErrorAsync<FORM_DATA extends IndexType> implements FormAction<FORM_DATA> {
-  constructor(private path: Path<FORM_DATA>, private oldValues: Fields<FORM_DATA>, private newError: string | null) { }
-  execute(currentState: State<FORM_DATA>): State<FORM_DATA> {
-    //@ts-ignore
-    const validating = { ...(currentState.validating) };
-    //@ts-ignore
-    if (!validating[this.path]) {
-      return currentState;
-    }
-    const oldValue = this.oldValues[this.path];
-    const newValue = currentState.values[this.path];
-    if (newValue !== oldValue) {
-      // validated value is obsolete.
-      return currentState;
-    } else {
-      delete (validating[this.path]);
-    }
-    const newErrors: FormErrors<FORM_DATA> = { ...currentState.errors };
-    if (this.newError) {
-      newErrors[this.path] = [this.newError];
-    } else {
-      delete newErrors[this.path];
-    }
-    return { ...currentState, validating, errors: newErrors };
-  }
-}
-
-
-
-
-// ###################################################################################################
-// private types.
-// ###################################################################################################
-
-type IndexType = { [key: string]: any }
-type FieldsVisited<FIELDS> = { [P in keyof FIELDS | string]?: boolean };
-type Validating<FIELDS> = { [P in keyof FIELDS | string]?: Promise<string | null>[] };
-
-export enum ValidationState {
-  VALID, VALIDATING, INVALID
-}
-
-export enum SubmitState {
-  /**
-   * initial state. no submit activity is going on.
-   */
-  NONE,
-  /**
-   * a submit has been requested by the user. The form is now doing the neccessary checks to submit.
-   */
-  INVOKE_SUBMIT,
-  /**
-   * everyting was ok. The form can be submitted, the users submit action will be invoked.
-   */
-  SUBMITTING
-}
-
-/**
- * Internal State - Exported for Test only! Do not use in production!
- */
-export interface State<FIELDS> {
-  values: Fields<FIELDS>;
-  submitRequested: boolean;
-  submitState: SubmitState;
-  fieldsVisited: FieldsVisited<FIELDS>;
-  errors: FormErrors<FIELDS>,
-  versions: { [P in keyof FIELDS]?:number[]},
-  validating: Validating<FIELDS>,
-  validated: boolean
-}
-
-type Path<FORM_DATA> = keyof FORM_DATA;
-
-type SubFormStateMap = {
-  [P: string]: ValidationState;
-}
-/**
- * Internal class for the SubFormStates. Do not use in user code!
- */
-export class SubFormStates {
-  getState(path: string): ValidationState | undefined {
-    return this.subFormStateMap[path];
-  }
-  private readonly subFormStateMap: SubFormStateMap;
-  constructor(data?: SubFormStates) {
-    if (data) {
-      this.subFormStateMap = data.subFormStateMap;
-    } else {
-      this.subFormStateMap = {};
-    }
-  }
-  validating(): boolean {
-    const subFormStates = Object.values(this.subFormStateMap);
-    return subFormStates.some((subFormState: ValidationState) => subFormState === ValidationState.VALIDATING);
-  }
-  setSubFormState(name: string, newState: ValidationState) {
-    this.subFormStateMap[name] = newState;
-  }
-  allValid(): boolean {
-    const subFormStates = Object.values(this.subFormStateMap);
-    return subFormStates.length === 0 || !subFormStates.some((subFormState: ValidationState) => subFormState !== ValidationState.VALID);
-  }
-
-  toString() {
-    return '[SubFormState: ' + JSON.stringify(this.subFormStateMap) + ']';
-  }
-}
-
-/**
- * Function to create the complex inital state. Exported only for testing purposes.
- * @param fields 
- */
-export function createInitialState<FORM_DATA>(fields: Fields<FORM_DATA>): State<FORM_DATA> {
-  return {
-    values: fields,
-    submitRequested: false,
-    fieldsVisited: {},
-    errors: {},
-    validating: {},
-    validated: false,
-    versions: {},
-    submitState: SubmitState.NONE
-  }
-}
-
-interface FormAction<FORM_DATA extends IndexType> {
-  execute(state: State<FORM_DATA>): State<FORM_DATA>;
-}

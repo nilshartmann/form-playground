@@ -1,9 +1,9 @@
-import React, { useState } from "react";
-import { render, fireEvent, cleanup, waitForElement, wait, getByText } from 'react-testing-library'
-import { OverallState, ValidateFn, useForm, Form, ValueCreators, MultiFormInput, RecordError, RecordErrorAsync, CustomObjectInput, ParentFormAdapter } from "./useForm";
+import React from "react";
+import { render, fireEvent, cleanup,  } from 'react-testing-library'
+import { OverallState, ValidateFn, useForm, MultiFormInput, RecordError, ParentFormAdapter } from "./useForm";
 import ErrorDisplay from './errorDisplay';
-import { exec } from "child_process";
 afterEach(() => { console.log('-----------------------------------------'); cleanup() });
+let overallFormState: OverallState<TestFormData> | undefined;
 
 it('use_Form: should display no validation errors when opened', () => {
     const wrapper = render(<TestForm submit={() => { }} subForm={false} />);
@@ -46,7 +46,6 @@ it('useForm: should add values in a subEditor', () => {
     const wrapper = render(<TestForm submit={() => { }} subForm={true} />);
     if (overallFormState !== undefined) {
         expect(overallFormState.values['multiField'].length).toEqual(0);
-        const submit: HTMLButtonElement = wrapper.getByText('submit') as HTMLButtonElement;
         const addButton: HTMLButtonElement = wrapper.getByTestId('multiadd') as HTMLButtonElement;
         fireEvent.click(addButton);
         expect(overallFormState.values['multiField'].length).toEqual(1);
@@ -57,7 +56,7 @@ it('useForm: should add values in a subEditor', () => {
         expect(overallFormState.values['multiField'].length).toEqual(2);
         changeInputValue((wrapper.getByTestId('subfieldinput1') as HTMLInputElement),'otherValue');
         expect(overallFormState.values['multiField'][1].simpleSubFieldOne).toEqual('otherValue');
-        wrapper.debug;
+        
 
     } else {
         fail("FormState is undefiend");
@@ -66,7 +65,7 @@ it('useForm: should add values in a subEditor', () => {
 });
 
 
-function changeInputValue(input: HTMLInputElement, newValue: string) {
+function changeInputValue(input: HTMLInputElement, newValue: string):void {
     fireEvent.change(input, {
         target: { value: newValue },
     });
@@ -76,8 +75,7 @@ function changeInputValue(input: HTMLInputElement, newValue: string) {
 
 const validate: ValidateFn<TestFormData> = function (
     newFormInput,
-    recordError: RecordError<TestFormData>,
-    recordErrorAsync: RecordErrorAsync<TestFormData>) {
+    recordError: RecordError<TestFormData>): void {
     if (newFormInput['fieldOne'].startsWith('invalid')) {
         recordError('fieldOne', 'fieldOneInvalid');
     }
@@ -100,13 +98,12 @@ const initialValues = {
 const valueCreators = {
     multiField: () => ({ simpleSubFieldOne: 'initial' })
 }
-let overallFormState: OverallState<TestFormData> | undefined;
 
-function TestForm(props: { submit: () => void, subForm: boolean }) {
+function TestForm(props: { submit: () => void, subForm: boolean }):React.ReactElement {
     const usedForm = useForm<TestFormData>('order form', validate, initialValues, props.submit, valueCreators);
     overallFormState = usedForm[0];
     const form = usedForm[1];
-    const { input, multi, custom } = form;
+    const { input, multi } = form;
     const isDisabled = overallFormState.submitRequested && overallFormState.hasErrors;
     const fieldOne = input('fieldOne');
     return (
@@ -122,7 +119,7 @@ function TestForm(props: { submit: () => void, subForm: boolean }) {
     );
 }
 
-function SimpleMultiEdior(props: MultiFormInput<SimpleSubItem>) {
+function SimpleMultiEdior(props: MultiFormInput<SimpleSubItem>):React.ReactElement {
     return <div>
         <button onClick={() => props.onAdd()} data-testid="multiadd">add</button>
         {
@@ -136,7 +133,7 @@ function SimpleMultiEdior(props: MultiFormInput<SimpleSubItem>) {
     </div>
 }
 
-function SimpleSubEditor(props: { idx:number, value: SimpleSubItem, onValueUpdate: (element: SimpleSubItem) => void; }) {
+function SimpleSubEditor(props: { idx:number, value: SimpleSubItem, onValueUpdate: (element: SimpleSubItem) => void; }):React.ReactElement {
     return <div>
         <input type='text' data-testid={"subfieldinput" + props.idx} value={props.value.simpleSubFieldOne} onChange={e => props.onValueUpdate({ simpleSubFieldOne: e.target.value })} />
     </div>
@@ -147,16 +144,15 @@ interface TestSubFormData {
 }
 
 const validateSubForm: ValidateFn<TestSubFormData> = function (newFormInput,
-    recordError: RecordError<TestSubFormData>,
-    recordErrorAsync: RecordErrorAsync<TestSubFormData>) {
+    recordError: RecordError<TestSubFormData>):void {
     if (newFormInput['subFieldOne'].startsWith('invalid')) {
         recordError('subFieldOne', 'subFieldOneInvalid');
     }
 }
 
-function TestSubForm(props: { parent: ParentFormAdapter }) {
+function TestSubForm(props: { parent: ParentFormAdapter }):React.ReactElement {
     const [overallFormState, form] = useForm<TestSubFormData>('sub form', validateSubForm, { subFieldOne: 'invalid' }, () => { }, {}, props.parent);
-    const { input, multi, custom } = form;
+    const { input } = form;
     console.log(`subform sr ${overallFormState.submitRequested}, he ${overallFormState.hasErrors} ${JSON.stringify(overallFormState.errors)}`);
     const fieldOne = input('subFieldOne');
     return (
