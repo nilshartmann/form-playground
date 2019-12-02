@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { render, fireEvent, cleanup, waitForElement, wait, getByText } from 'react-testing-library'
+import { render, fireEvent, cleanup, waitForElement, wait, getByText } from '@testing-library/react'
 // this adds custom jest matchers from jest-dom
 
 import OrderForm from './OrderForm';

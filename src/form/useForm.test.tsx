@@ -1,5 +1,5 @@
 import React from "react";
-import { render, fireEvent, cleanup,  } from 'react-testing-library'
+import { render, fireEvent, cleanup,  } from '@testing-library/react'
 import { OverallState, ValidateFn, useForm, MultiFormInput, RecordError, ParentFormAdapter } from "./useForm";
 import ErrorDisplay from './errorDisplay';
 afterEach(() => { console.log('-----------------------------------------'); cleanup() });
@@ -157,7 +157,7 @@ function TestSubForm(props: { parent: ParentFormAdapter }):React.ReactElement {
     const fieldOne = input('subFieldOne');
     return (
         <div className="Form">
-            <input type='text' name={fieldOne.name} onChange={fieldOne.onChange} onBlur={fieldOne.onBlur} data-testid='fieldOne' />
+            <input type='text' name={fieldOne.name} onChange={fieldOne.onChange} onBlur={fieldOne.onBlur} data-testid='subFieldOne' />
             <ErrorDisplay visited={fieldOne.visited} errorMessages={fieldOne.errorMessages} />
         </div>
     );
