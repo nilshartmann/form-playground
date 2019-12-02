@@ -406,6 +406,21 @@ input:hover {
   font-size: 1.5rem;
 }
 
+.drinksEditor {
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+.drinkSelect {
+  border: 1px solid;
+  margin: 0.2em;
+  display: inline-block;
+}
+
+.drinksDisplay {
+  width: 30%;
+  display: inline-block;
+}
+
 .ButtonBar {
   margin-top: 2rem;
   display: flex;
@@ -424,4 +439,8 @@ input:hover {
 .UserProfile .Avatar {
   width: 2rem;
   margin-right: 1rem;
+}
+.ErrorDisplay {
+  color: red;
+  font-weight: bold;
 }
