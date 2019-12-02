@@ -1,7 +1,8 @@
 import React, { Component } from "react";
 import OrderForm from "./OrderForm";
 import LoginForm from "./LoginForm";
-
+import HelloForm from "./helloForm";
+import Hello from "./helloForm";
 class App extends Component {
   public render() {
     return (
@@ -12,8 +13,11 @@ class App extends Component {
         </header>
         <div className="PageContainer">
           <main>
+            <h1>Most basic example: Hello!</h1>
+              <Hello/>
             <h1>Example: Login Form</h1>
               <LoginForm />
+
             <h1>Pizza ist das Beste...</h1>
             <OrderForm submit={(values:any) => {
               console.log('######################################################################'); 
